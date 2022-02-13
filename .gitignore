@@ -1,0 +1,9 @@
+/target
+/out
+.env
+*.mkv
+*.ogg
+*.mp4
+*.m4a
+*.txt
+*.part
