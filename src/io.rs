@@ -1,26 +1,13 @@
 use std::{
-    collections::BTreeSet,
-    fs::{File, OpenOptions},
-    io::{BufRead, BufReader},
+    fs::OpenOptions,
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 pub fn touch<P: AsRef<Path>>(path: P) -> Result<()> {
     OpenOptions::new().create(true).append(true).open(path)?;
     Ok(())
-}
-
-pub fn load_already_processed<P: AsRef<Path>>(path: P) -> Result<BTreeSet<String>> {
-    let f = File::open(path).with_context(|| "Could not open file")?;
-    let reader = BufReader::new(f);
-
-    Ok(reader
-        .lines()
-        .flatten()
-        .map(|s| s.trim().to_string())
-        .collect())
 }
 
 pub fn build_output_path<P: AsRef<Path>>(

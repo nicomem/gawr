@@ -1,9 +1,9 @@
 use std::{collections::HashMap, ffi::OsStr, path::Path, process::Command};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
 
-use crate::{Metadata, Timestamp};
+use crate::types::{Metadata, Timestamp};
 
 const YT_DLP: &str = "yt-dlp";
 const FFMPEG: &str = "ffmpeg";
@@ -21,14 +21,12 @@ fn run_command<S: AsRef<str>, F: FnOnce(&mut Command) -> &mut Command>(
         .with_context(|| format!("Could not run {} command", program))?;
 
     if res.status.success() {
-        let stdout = String::from_utf8(res.stdout)
-            .with_context(|| "Output from command is not valid UTF-8")?;
+        let stdout =
+            String::from_utf8(res.stdout).context("Output from command is not valid UTF-8")?;
         Ok(stdout)
     } else {
         let stderr = String::from_utf8_lossy(&res.stderr);
-        Err(anyhow!(
-            "{program} did run but was not successful. Here is its stderr: {stderr}"
-        ))
+        bail!("{program} did run but was not successful. Here is its stderr: {stderr}")
     }
 }
 
@@ -65,7 +63,6 @@ fn assert_success_command<S: AsRef<str>, F: FnOnce(&mut Command) -> &mut Command
 }
 
 pub fn get_playlist_videos_id(playlist_id: &str) -> Result<Vec<String>> {
-    // yt-dlp -q --flat-playlist --print "%(id)s" -- "$PLAYLIST_ID"
     let output = run_command(YT_DLP, |cmd| {
         cmd.arg("-q")
             .arg("--flat-playlist")
@@ -78,7 +75,6 @@ pub fn get_playlist_videos_id(playlist_id: &str) -> Result<Vec<String>> {
 }
 
 pub fn download_audio_with_meta<P: AsRef<Path>>(path: P, video_id: &str) -> Result<bool> {
-    // yt-dlp -q -o "$TMP_FILE" -f bestaudio --audio-format opus --add-metadata -- "$ID" 2>/dev/null
     check_run_command(YT_DLP, |cmd| {
         cmd.arg("-q")
             .args([OsStr::new("-o"), path.as_ref().as_os_str()])
@@ -94,7 +90,6 @@ pub fn download_audio_with_meta<P: AsRef<Path>>(path: P, video_id: &str) -> Resu
 }
 
 pub fn extract_metadata<P: AsRef<Path>>(path: P) -> Result<Metadata> {
-    // ffprobe -v quiet "$TMP_FILE" -of json -show_format | sed -rn 's#.*"DESCRIPTION": "(.*)"#\1#p'
     let output = run_command(FFPROBE, |cmd| {
         cmd.args(FFXXX_DEFAULT_ARGS)
             .arg(path.as_ref().as_os_str())
@@ -103,7 +98,7 @@ pub fn extract_metadata<P: AsRef<Path>>(path: P) -> Result<Metadata> {
     })?;
 
     let json: serde_json::Value =
-        serde_json::from_str(&output).with_context(|| "Could not parse JSON output")?;
+        serde_json::from_str(&output).context("Could not parse JSON output")?;
 
     let json = json
         .as_object()
@@ -123,7 +118,7 @@ pub fn extract_metadata<P: AsRef<Path>>(path: P) -> Result<Metadata> {
         .collect();
     map.insert("duration".to_owned(), duration.to_owned());
 
-    Ok(Metadata(map))
+    Ok(Metadata::new(map))
 }
 
 pub fn extract_clip<P1: AsRef<Path>, P2: AsRef<Path>>(
@@ -131,17 +126,15 @@ pub fn extract_clip<P1: AsRef<Path>, P2: AsRef<Path>>(
     output: P2,
     start: &Timestamp,
     end: Option<&Timestamp>,
-    origin: &str,
+    album: &str,
 ) -> Result<()> {
-    // ffmpeg -v quiet -nostdin -i "$TMP_FILE" -map_metadata -1 -ss "$old_timestamp" -to "$timestamp" \
-    //             -c:a copy "$file"
     assert_success_command(FFMPEG, |cmd| {
         let mut cmd = cmd
             .args(FFXXX_DEFAULT_ARGS)
             .arg("-y")
             .args([OsStr::new("-i"), input.as_ref().as_os_str()])
             .args(["-map_metadata", "-1"])
-            .args(["-metadata", &format!("album={origin}")])
+            .args(["-metadata", &format!("album={album}")])
             .args(["-ss", &start.t_start]);
 
         if let Some(end) = end {
@@ -153,7 +146,6 @@ pub fn extract_clip<P1: AsRef<Path>, P2: AsRef<Path>>(
 }
 
 pub fn normalize_audio<P: AsRef<Path>>(path: P) -> Result<()> {
-    // ffmpeg-normalize "$file" -o "$file" -f -c:a libopus -b:a 128K
     assert_success_command(FFMPEG_NORMALIZE, |cmd| {
         cmd.arg(path.as_ref().as_os_str())
             .args([OsStr::new("-o"), path.as_ref().as_os_str()])
@@ -164,7 +156,6 @@ pub fn normalize_audio<P: AsRef<Path>>(path: P) -> Result<()> {
 }
 
 pub fn get_file_duration<P: AsRef<Path>>(path: P) -> Result<u64> {
-    // ffprobe old.mkv -show_entries format=duration
     let res = run_command(FFPROBE, |cmd| {
         cmd.args(["-show_entries", "format=duration"])
             .arg(path.as_ref().as_os_str())
@@ -174,8 +165,8 @@ pub fn get_file_duration<P: AsRef<Path>>(path: P) -> Result<u64> {
     let re = Regex::new(r"duration=(\d+)")?;
     let cap = re
         .captures(&res)
-        .with_context(|| "Did not find the duration in the ffprobe output")?;
+        .context("Did not find the duration in the ffprobe output")?;
 
     let duration = cap.get(1).unwrap().as_str();
-    duration.parse().with_context(|| "Could not parse duration")
+    duration.parse().context("Could not parse duration")
 }
