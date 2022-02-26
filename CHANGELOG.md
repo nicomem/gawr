@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2022-02-26
+### Added
+- Create temporary files automatically
+- Support more file format: `mka` and `webm`
+- Allow using a different regular expression for finding and parsing description timestamps
+
+### Changed
+- Change audio normalization backend from `ffmpeg-normalize` to calls to `ffmpeg`
+- Do not use the user-given extension for the entire stream temporary file
+    - Use directly `mkv` as it should support nearly anything
+- Set the default file extension to `ogg`
+
+### Removed
+- Remove the dependency on `ffmpeg-normalize`
+- Remove the option to select a temporary file path
+
 ## [0.2.0] - 2022-02-25
 ### Added
 - Add a command line argument parser
@@ -15,7 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Environment variables are prefixed by the uppercased project name
 - Structure code into more, smaller files & components
-- Verify that the temporary file has a verified valid extension at startup instead of erroring out during command execution
+- Verify that the temporary file has a verified valid extension at startup
+    - Instead of erroring out during command execution
 
 ## [0.1.0] - 2022-02-13
 ### Added

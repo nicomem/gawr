@@ -3,15 +3,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use log::debug;
-use rayon::{ThreadPool, ThreadPoolBuilder};
-
 use anyhow::{bail, Context, Result};
+use log::debug;
+use rayon_core::{ThreadPool, ThreadPoolBuilder};
+use regex::Regex;
 
 use crate::{
     command::{extract_clip, extract_metadata, get_file_duration, normalize_audio},
-    io::{build_output_path, touch},
-    types::{Timestamp, Timestamps},
+    io::{build_output_path, named_tempfile, touch},
+    types::{Extension, Timestamp, Timestamps},
     Metadata,
 };
 
@@ -20,7 +20,6 @@ pub struct Clipper {
 }
 
 impl Clipper {
-    // TODO
     pub fn new() -> Result<Self> {
         Ok(Self {
             pool: ThreadPoolBuilder::new().build()?,
@@ -30,13 +29,16 @@ impl Clipper {
     /// Try to extract the metadata and timestamps from the file.
     /// Return an error if an operation failed.
     /// Return Ok(None) if the operation succeded
-    pub fn extract_metadata_timestamps<P: AsRef<Path>>(path: P) -> Result<(Metadata, Timestamps)> {
+    pub fn extract_metadata_timestamps<P: AsRef<Path>>(
+        path: P,
+        clip_regex: &Regex,
+    ) -> Result<(Metadata, Timestamps)> {
         let path = path.as_ref();
         let metadata =
             extract_metadata(path).context("Could not extract description of downloaded file")?;
 
         let description = &metadata["description"];
-        let timestamps = Timestamps::extract_timestamps(description);
+        let timestamps = Timestamps::extract_timestamps(description, clip_regex);
 
         if timestamps.len() < 5 {
             bail!(
@@ -91,8 +93,11 @@ impl Clipper {
             output
         };
 
-        let process =
-            |start, end, output: PathBuf| Clipper::create_clip(input, output, start, end, &album);
+        let process = |start, end, output: PathBuf| {
+            Clipper::create_clip(input, output, start, end, &album)
+                .context("Could not create clip")
+                .unwrap();
+        };
 
         self.for_each_clip(timestamps, preprocess, &process);
     }
@@ -148,22 +153,25 @@ impl Clipper {
         start: &Timestamp,
         end: Option<&Timestamp>,
         album: &str,
-    ) {
+    ) -> Result<()> {
         let output = output.as_ref();
 
-        extract_clip(input, output, start, end, album)
-            .context("Could not extract a clip of the audio file from the timestamps")
-            .unwrap();
+        // Create a temporary file with the correct extension
+        let out_ext = Extension::from_path(output).context("Invalid output extension")?;
+        let tmp = named_tempfile(out_ext)?;
 
-        normalize_audio(output)
-            .context("Could not normalize audio")
-            .unwrap();
+        extract_clip(input, tmp.path(), start, end, album)
+            .context("Could not extract a clip of the audio file from the timestamps")?;
+
+        normalize_audio(tmp.path(), output).context("Could not normalize audio")?;
 
         debug!(
-            "Clip number '{}' ({} - {}) completed",
+            "Clip '{}' ({} - {}) completed",
             start.title,
             start.t_start,
             end.map_or("END", |end| end.t_start.as_str())
         );
+
+        Ok(())
     }
 }

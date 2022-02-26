@@ -33,10 +33,8 @@ impl Timestamps {
         Self(data)
     }
 
-    pub fn extract_timestamps(description: &str) -> Self {
-        let re = Regex::new(r#"([0-9]+(:[0-9]+)+) *-? +(.+)"#).unwrap();
-
-        let timestamps = re
+    pub fn extract_timestamps(description: &str, clip_regex: &Regex) -> Self {
+        let timestamps = clip_regex
             .captures_iter(description)
             .map(|cap| {
                 let title = cap.get(3).unwrap().as_str();

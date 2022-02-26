@@ -1,6 +1,13 @@
-use std::{collections::HashMap, ffi::OsStr, path::Path, process::Command};
+use std::{
+    collections::HashMap,
+    ffi::OsStr,
+    path::Path,
+    process::{Command, Output, Stdio},
+};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
+use bitflags::bitflags;
+use log::debug;
 use regex::Regex;
 
 use crate::types::{Metadata, Timestamp};
@@ -9,61 +16,95 @@ const YT_DLP: &str = "yt-dlp";
 const FFMPEG: &str = "ffmpeg";
 const FFPROBE: &str = "ffprobe";
 const FFXXX_DEFAULT_ARGS: [&str; 3] = ["-hide_banner", "-loglevel", "error"];
-const FFMPEG_NORMALIZE: &str = "ffmpeg-normalize";
 
+bitflags! {
+    struct Capture: u8 {
+        const STDIN = 0b0000001;
+        const STDOUT = 0b0000010;
+        const STDERR = 0b0000100;
+    }
+}
+
+/// Run a command, returning its raw output handle.
+///
+/// IO handles will be captured only if the caller required it or if the log level is Debug.
+/// In that last case, `stdout` and `stderr` will be logged.
+///
+/// The function returns an error only if the command failed to execute.
+/// If the program runs but returns a non-0 status code, it will not trigger an error.
 fn run_command<S: AsRef<str>, F: FnOnce(&mut Command) -> &mut Command>(
     program: S,
     f: F,
-) -> Result<String> {
+    capture: Capture,
+) -> Result<Output> {
     let program = program.as_ref();
-    let res = f(&mut Command::new(program))
-        .output()
-        .with_context(|| format!("Could not run {} command", program))?;
+
+    let is_debug = log::log_enabled!(log::Level::Debug);
+    let get_io = |capture| {
+        if capture {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        }
+    };
+
+    let mut cmd = Command::new(program);
+    let cmd = f(&mut cmd)
+        .stdin(get_io(capture.contains(Capture::STDIN)))
+        .stdout(get_io(is_debug || capture.contains(Capture::STDOUT)))
+        .stderr(get_io(is_debug || capture.contains(Capture::STDERR)));
+
+    debug!("Executing command: {cmd:?}");
+    let res = cmd.output().context("Could not run command")?;
+
+    if is_debug {
+        debug!("status: {}", res.status);
+        debug!("stdout: {:?}", String::from_utf8_lossy(&res.stdout));
+        debug!("stderr: {:?}", String::from_utf8_lossy(&res.stderr));
+    }
+
+    Ok(res)
+}
+
+/// Run the command and return its standard output
+fn run_get_stdout<S: AsRef<str>, F: FnOnce(&mut Command) -> &mut Command>(
+    program: S,
+    f: F,
+) -> Result<String> {
+    let res = run_command(program, f, Capture::STDOUT)?;
 
     if res.status.success() {
         let stdout =
             String::from_utf8(res.stdout).context("Output from command is not valid UTF-8")?;
         Ok(stdout)
     } else {
-        let stderr = String::from_utf8_lossy(&res.stderr);
-        bail!("{program} did run but was not successful. Here is its stderr: {stderr}")
+        bail!("Command did run but was not successful");
     }
 }
 
+/// Run the command and return whether it has returned a success status code.
 fn check_run_command<S: AsRef<str>, F: FnOnce(&mut Command) -> &mut Command>(
     program: S,
     f: F,
 ) -> Result<bool> {
-    let program = program.as_ref();
-    let res = f(&mut Command::new(program))
-        .status()
-        .with_context(|| format!("Could not run {} command", program))?;
-
-    Ok(res.success())
+    let res = run_command(program, f, Capture::empty())?;
+    Ok(res.status.success())
 }
 
+/// Run the command and verify that it has returned a success status code.
 fn assert_success_command<S: AsRef<str>, F: FnOnce(&mut Command) -> &mut Command>(
     program: S,
     f: F,
 ) -> Result<()> {
-    let program = program.as_ref();
-    let res = f(&mut Command::new(program))
-        .output()
-        .with_context(|| format!("Could not run {} command", program))?;
-
-    if res.status.success() {
+    if check_run_command(program, f)? {
         Ok(())
     } else {
-        let stderr = String::from_utf8_lossy(&res.stderr);
-        let stdout = String::from_utf8_lossy(&res.stdout);
-        Err(anyhow!(
-            "{program} did run but was not successful. Here is its stderr: {stderr}; and stdout: {stdout}"
-        ))
+        bail!("Command did run but was not successful.")
     }
 }
 
 pub fn get_playlist_videos_id(playlist_id: &str) -> Result<Vec<String>> {
-    let output = run_command(YT_DLP, |cmd| {
+    let output = run_get_stdout(YT_DLP, |cmd| {
         cmd.arg("-q")
             .arg("--flat-playlist")
             .args(["--print", "%(id)s"])
@@ -79,7 +120,6 @@ pub fn download_audio_with_meta<P: AsRef<Path>>(path: P, video_id: &str) -> Resu
         cmd.arg("-q")
             .args([OsStr::new("-o"), path.as_ref().as_os_str()])
             .args(["-f", "bestaudio"])
-            .args(["--audio-format", "opus"])
             .arg("--add-metadata")
             // 2 lines below to force setting the video title & uploader (https://github.com/yt-dlp/yt-dlp/issues/904)
             .args(["--parse-metadata", "%(title)s:%(meta_title)s"])
@@ -90,7 +130,7 @@ pub fn download_audio_with_meta<P: AsRef<Path>>(path: P, video_id: &str) -> Resu
 }
 
 pub fn extract_metadata<P: AsRef<Path>>(path: P) -> Result<Metadata> {
-    let output = run_command(FFPROBE, |cmd| {
+    let output = run_get_stdout(FFPROBE, |cmd| {
         cmd.args(FFXXX_DEFAULT_ARGS)
             .arg(path.as_ref().as_os_str())
             .args(["-of", "json"])
@@ -145,18 +185,79 @@ pub fn extract_clip<P1: AsRef<Path>, P2: AsRef<Path>>(
     })
 }
 
-pub fn normalize_audio<P: AsRef<Path>>(path: P) -> Result<()> {
-    assert_success_command(FFMPEG_NORMALIZE, |cmd| {
-        cmd.arg(path.as_ref().as_os_str())
-            .args([OsStr::new("-o"), path.as_ref().as_os_str()])
-            .arg("-f")
-            .args(["-c:a", "libopus"])
-            .args(["-b:a", "128K"])
+pub fn normalize_audio<P1: AsRef<Path>, P2: AsRef<Path>>(input: P1, output: P2) -> Result<()> {
+    // First pass to generate the statistics
+    let input = input.as_ref().as_os_str();
+    let res = run_command(
+        FFMPEG,
+        |cmd| {
+            // Do not use FFXXX_DEFAULT_ARGS as it would remove the wanted output
+            cmd.arg("-hide_banner")
+                .arg("-y")
+                .args([OsStr::new("-i"), input])
+                .args(["-pass", "1"])
+                .args(["-filter:a", "loudnorm=print_format=json"])
+                .args(["-f", "null", "-"])
+        },
+        Capture::STDERR,
+    )?;
+
+    // Wanted output is in stderr along with other things, so we need to parse it
+    // Fortunately, the wanted part is at the end and "easily" findable
+    let stderr = String::from_utf8_lossy(&res.stderr);
+
+    // Take the lines in reverse until we find "{"
+    let mut json_parts: Vec<&str> = stderr
+        .lines()
+        .rev()
+        .take_while(|&line| line != "{")
+        .collect();
+    // Re-add the "{"
+    json_parts.push("{");
+    // Put back the lines in the correct order
+    json_parts.reverse();
+    // Join the lines together
+    let json_str: String = json_parts.join("\n");
+
+    let json = serde_json::from_str::<serde_json::Value>(&json_str)
+        .context("Could not parse JSON output")?;
+    let json = json.as_object().context("JSON output is not an object")?;
+
+    let get_str = |k: &str| -> Result<&str> {
+        json.get(k)
+            .with_context(|| format!("Key {k} not found in JSON object"))?
+            .as_str()
+            .with_context(|| format!("Value of key {k} is not a string"))
+    };
+
+    let input_i = get_str("input_i")?;
+    let input_lra = get_str("input_lra")?;
+    let input_tp = get_str("input_tp")?;
+    let input_thresh = get_str("input_thresh")?;
+
+    // Second pass to apply the normalization using the previous statistics
+    let filter = format!(
+        "loudnorm=linear=true:\
+        measured_I={input_i}:\
+        measured_LRA={input_lra}:\
+        measured_tp={input_tp}:\
+        measured_thresh={input_thresh}"
+    );
+
+    let output = output.as_ref().as_os_str();
+    assert_success_command(FFMPEG, |cmd| {
+        cmd.args(FFXXX_DEFAULT_ARGS)
+            .arg("-y")
+            .args([OsStr::new("-i"), input])
+            .args(["-pass", "2"])
+            .args(["-filter:a", &filter])
+            .args(["-c:a", "libopus", "-b:a", "128K"])
+            .arg(output)
     })
 }
 
 pub fn get_file_duration<P: AsRef<Path>>(path: P) -> Result<u64> {
-    let res = run_command(FFPROBE, |cmd| {
+    let res = run_get_stdout(FFPROBE, |cmd| {
         cmd.args(["-show_entries", "format=duration"])
             .arg(path.as_ref().as_os_str())
     })?;

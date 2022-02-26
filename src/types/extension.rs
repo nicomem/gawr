@@ -4,8 +4,10 @@ use clap::ArgEnum;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ArgEnum)]
 pub enum Extension {
-    Ogg,
+    Mka,
     Mkv,
+    Ogg,
+    Webm,
 }
 
 impl Extension {
@@ -13,8 +15,10 @@ impl Extension {
     /// e.g. ".ext"
     pub fn with_dot(self) -> &'static str {
         match self {
-            Extension::Ogg => ".ogg",
+            Extension::Mka => ".mka",
             Extension::Mkv => ".mkv",
+            Extension::Ogg => ".ogg",
+            Extension::Webm => ".webm",
         }
     }
 
@@ -25,8 +29,10 @@ impl Extension {
             .extension()
             .and_then(|ext| ext.to_str())
             .and_then(|ext| match ext {
-                "ogg" => Some(Self::Ogg),
+                "mka" => Some(Self::Mka),
                 "mkv" => Some(Self::Mkv),
+                "ogg" => Some(Self::Ogg),
+                "webm" => Some(Self::Webm),
                 _ => None,
             })
     }

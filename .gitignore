@@ -1,9 +1,13 @@
 /target
 /out
 .env
-*.mkv
-*.ogg
-*.mp4
-*.m4a
 *.txt
 *.part
+
+# Stream containers
+*.m4a
+*.mka
+*.mkv
+*.mp4
+*.ogg
+*.webm
