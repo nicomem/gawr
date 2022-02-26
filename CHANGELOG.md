@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2022-02-27
+### Added
+- Verify that the external programs are reachable at startup
+- If `yt-dlp` is not present, try reaching `youtube-dl`
+- Add custom error enumeration
+- Differentiate more precisely between unavailable videos and other unexpected errors
+
+### Changed
+- Refactor the commands into multiple interfaces to external components
+
+### Removed
+- Remove the dependency on `ffprobe`
+
 ## [0.3.0] - 2022-02-26
 ### Added
 - Create temporary files automatically

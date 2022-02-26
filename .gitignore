@@ -1,7 +1,9 @@
 /target
 /out
 .env
+
 *.txt
+*.json
 *.part
 
 # Stream containers

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use crate::result::Result;
 
 pub struct FileCounter<'a> {
     directory: &'a Path,
@@ -15,10 +15,7 @@ impl<'a> FileCounter<'a> {
 
     /// Count the number of files in the directory
     fn count_files(directory: &Path) -> Result<usize> {
-        Ok(directory
-            .read_dir()
-            .context("Could not read directory")?
-            .count())
+        Ok(directory.read_dir()?.count())
     }
 
     /// Count and update the internal state.

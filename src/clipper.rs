@@ -3,98 +3,80 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::Context;
 use log::debug;
 use rayon_core::{ThreadPool, ThreadPoolBuilder};
 use regex::Regex;
 
 use crate::{
-    command::{extract_clip, extract_metadata, get_file_duration, normalize_audio},
     io::{build_output_path, named_tempfile, touch},
+    outside::StreamTransformer,
+    result::{bail, Result},
     types::{Extension, Timestamp, Timestamps},
     Metadata,
 };
 
-pub struct Clipper {
+pub struct Clipper<'a> {
+    stream_tsf: &'a dyn StreamTransformer,
     pool: ThreadPool,
 }
 
-impl Clipper {
-    pub fn new() -> Result<Self> {
+impl<'a> Clipper<'a> {
+    pub fn new(stream_tsf: &'a dyn StreamTransformer) -> Result<Self> {
         Ok(Self {
+            stream_tsf,
             pool: ThreadPoolBuilder::new().build()?,
         })
     }
 
-    /// Try to extract the metadata and timestamps from the file.
-    /// Return an error if an operation failed.
-    /// Return Ok(None) if the operation succeded
-    pub fn extract_metadata_timestamps<P: AsRef<Path>>(
-        path: P,
-        clip_regex: &Regex,
-    ) -> Result<(Metadata, Timestamps)> {
-        let path = path.as_ref();
-        let metadata =
-            extract_metadata(path).context("Could not extract description of downloaded file")?;
-
-        let description = &metadata["description"];
+    /// Try to extract the timestamps from the description.
+    pub fn extract_timestamps(&self, description: &str, clip_regex: &Regex) -> Result<Timestamps> {
         let timestamps = Timestamps::extract_timestamps(description, clip_regex);
-
-        if timestamps.len() < 5 {
-            bail!(
-                "Nope, too little timestamps, something went wrong. Description: {description}. Timestamps: {timestamps:?}"
-            );
+        if timestamps.len() > 5 {
+            Ok(timestamps)
+        } else {
+            bail(
+                "Nope, too little timestamps, something went wrong. \
+                Description: {description}. Timestamps: {timestamps:?}",
+            )
         }
-
-        Ok((metadata, timestamps))
     }
 
     /// Verify that the file stream duration is longer than the latest timestamp.
     /// If there is a timestamp after the stream end, it would mean that the file
     /// download stopped before completing.
-    pub fn is_file_complete<P: AsRef<Path>>(path: P, timestamps: &Timestamps) -> Result<bool> {
+    pub fn is_file_complete(&self, stream_duration: u64, timestamps: &Timestamps) -> Result<bool> {
         // The minimum number of second the last clip must last for the stream to be considered complete
         const MIN_CLIP_LENGTH: u64 = 10;
 
         let last_timestamp = timestamps.last().unwrap();
         let last_secs = Timestamp::to_seconds(&last_timestamp.t_start);
 
-        let file_duration = get_file_duration(path).context("Could not get file duration")?;
-
-        Ok(last_secs + MIN_CLIP_LENGTH < file_duration)
+        Ok(last_secs + MIN_CLIP_LENGTH < stream_duration)
     }
 
-    pub fn create_clips<P1: AsRef<Path>, P2: AsRef<Path>>(
+    pub fn create_clips(
         &self,
-        input: P1,
-        out_dir: P2,
+        input: &Path,
+        out_dir: &Path,
         timestamps: &Timestamps,
         metadata: &Metadata,
         video_id: &str,
         extension: &str,
     ) {
-        let out_dir = out_dir.as_ref();
-        let input = input.as_ref();
-        let album = format!(
-            "{} ({})",
-            metadata.get("title").map_or("???", |s| s),
-            video_id
-        );
-
+        let album = format!("{} ({})", metadata.title, video_id);
         let preprocess = |start: &Timestamp, _| {
             let output = build_output_path(&out_dir, &start.title, extension)
                 .context("Could not build output file path")
                 .unwrap();
 
-            touch(&output)
-                .with_context(|| format!("Could not create the empty file {}", output.display()))
-                .unwrap();
+            touch(&output).unwrap();
 
             output
         };
 
         let process = |start, end, output: PathBuf| {
-            Clipper::create_clip(input, output, start, end, &album)
+            self.create_clip(input, &output, start, end, &album)
                 .context("Could not create clip")
                 .unwrap();
         };
@@ -147,23 +129,25 @@ impl Clipper {
     /// and will be saved to `output`. The `album` metadata will be added to the file.
     ///
     /// If `end` is not specified, clip will continue until the end of the stream.
-    fn create_clip<P1: AsRef<Path>, P2: AsRef<Path>>(
-        input: P1,
-        output: P2,
+    fn create_clip(
+        &self,
+        input: &Path,
+        output: &Path,
         start: &Timestamp,
         end: Option<&Timestamp>,
         album: &str,
     ) -> Result<()> {
-        let output = output.as_ref();
-
         // Create a temporary file with the correct extension
         let out_ext = Extension::from_path(output).context("Invalid output extension")?;
         let tmp = named_tempfile(out_ext)?;
 
-        extract_clip(input, tmp.path(), start, end, album)
+        self.stream_tsf
+            .extract_clip(input, tmp.path(), start, end, album)
             .context("Could not extract a clip of the audio file from the timestamps")?;
 
-        normalize_audio(tmp.path(), output).context("Could not normalize audio")?;
+        self.stream_tsf
+            .normalize_audio(tmp.path(), output)
+            .context("Could not normalize audio")?;
 
         debug!(
             "Clip '{}' ({} - {}) completed",

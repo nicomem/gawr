@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-use anyhow::{ensure, Context, Result};
+use crate::result::{bail, Result};
 
 pub struct AlreadyProcessed {
     ids: BTreeSet<String>,
@@ -19,8 +19,7 @@ impl AlreadyProcessed {
             .read(true)
             .write(true)
             .create(true)
-            .open(path.as_ref())
-            .context("Could not open processed file in append mode")?;
+            .open(path.as_ref())?;
 
         // Read the entire file with each line as an id
         let reader = BufReader::new(&mut file);
@@ -37,10 +36,12 @@ impl AlreadyProcessed {
     pub fn push(&mut self, id: String) -> Result<()> {
         // Push it to memory
         let is_new = self.ids.insert(id.clone());
-        ensure!(is_new, "ID already exist in cache");
+        if !is_new {
+            bail("ID already exist in cache")?;
+        }
 
         // Push it to file
-        writeln!(self.file, "{id}").context("Could not append to processed file")?;
+        writeln!(self.file, "{id}")?;
         Ok(())
     }
 
