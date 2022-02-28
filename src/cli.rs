@@ -17,8 +17,6 @@ macro_rules! arg_env {
     };
 }
 
-const DEFAULT_CLIP_REGEX: &str = r#"(?P<time>[0-9]+(:[0-9]+)+) *.? +(?P<title>.+)"#;
-
 /// Wrapper-tool around `youtube-dl` to create an audio library out of web videos.
 /// Download, clip, and normalize audio streams.
 #[derive(Parser, Debug)]
@@ -44,13 +42,18 @@ pub struct Args {
     #[clap(long, arg_enum, default_value_t=Extension::Ogg, env=arg_env!("EXT"))]
     pub ext: Extension,
 
-    /// The regular expression for extracting clip timestamps from the description.
+    /// The regular expressions for extracting clip timestamps from the description.
     /// The default value should be able to detect and parse most timestamps.
     ///
     /// Must have two named captured groups: `time` and `title`,
     /// corresponding to the starting timestamp and the title of the clip.
     ///
+    /// The option can be set multiple times, resulting in multiple patterns.
+    /// For every line in the description, every pattern will be tested until one matches.
+    ///
+    /// If at least one pattern is specified, the default patterns will not be tested.
+    ///
     /// Must use the [Regex crate syntax](https://docs.rs/regex/latest/regex/#syntax)
-    #[clap(long, default_value=DEFAULT_CLIP_REGEX, env=arg_env!("CLIP_REGEX"))]
-    pub clip_regex: Regex,
+    #[clap(long, env=arg_env!("CLIP_REGEX"))]
+    pub clip_regex: Option<Vec<Regex>>,
 }

@@ -1,7 +1,7 @@
 use std::process::{Command, Output, Stdio};
 
 use bitflags::bitflags;
-use log::debug;
+use log::{debug, trace};
 
 use crate::result::{bail, Result};
 
@@ -52,8 +52,10 @@ pub fn run_command<S: AsRef<str>, F: FnOnce(&mut Command) -> &mut Command>(
 
     if is_debug {
         debug!("status: {}", res.status);
-        debug!("stdout: {:?}", String::from_utf8_lossy(&res.stdout));
-        debug!("stderr: {:?}", String::from_utf8_lossy(&res.stderr));
+        debug!("stdout: {} bytes long", res.stdout.len());
+        trace!("stdout: {:?}", String::from_utf8_lossy(&res.stdout));
+        debug!("stderr: {} bytes long", res.stderr.len());
+        trace!("stderr: {:?}", String::from_utf8_lossy(&res.stderr));
     }
 
     Ok(res)

@@ -13,7 +13,9 @@ pub struct AlreadyProcessed {
 }
 
 impl AlreadyProcessed {
-    pub fn read_or_create<P: AsRef<Path>>(path: P) -> Result<Self> {
+    const COMMENT_PREFIX: &'static str = "# ";
+
+    pub fn read_or_create<P: AsRef<Path>>(path: P, section_title: &str) -> Result<Self> {
         // Open or create file from the start with RW rights
         let mut file = OpenOptions::new()
             .read(true)
@@ -24,11 +26,28 @@ impl AlreadyProcessed {
         // Read the entire file with each line as an id
         let reader = BufReader::new(&mut file);
 
+        let mut is_same_section = false;
         let ids = reader
             .lines()
             .flatten()
-            .map(|s| s.trim().to_string())
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty()) // Ignore blank lines
+            .filter(|line| {
+                // Ignore comments
+                if let Some(comment) = Self::parse_comment(line) {
+                    is_same_section = comment == section_title;
+                    false
+                } else {
+                    true
+                }
+            })
             .collect();
+
+        // If the last section is not the same as the new one,
+        // insert the new section title as a comment
+        if !is_same_section {
+            writeln!(file, "{}", Self::to_comment(section_title))?;
+        }
 
         Ok(Self { ids, file })
     }
@@ -51,5 +70,13 @@ impl AlreadyProcessed {
 
     pub fn contains(&self, id: &str) -> bool {
         self.ids.contains(id)
+    }
+
+    fn to_comment(msg: &str) -> String {
+        format!("{}{msg}", Self::COMMENT_PREFIX)
+    }
+
+    fn parse_comment(line: &str) -> Option<&str> {
+        line.strip_prefix(Self::COMMENT_PREFIX)
     }
 }

@@ -22,18 +22,23 @@ impl Extension {
         }
     }
 
+    /// Parse the raw extension string, stripped of its prefix dot
+    pub fn from_no_dot(ext: &str) -> Option<Self> {
+        match ext {
+            "mka" => Some(Self::Mka),
+            "mkv" => Some(Self::Mkv),
+            "ogg" => Some(Self::Ogg),
+            "webm" => Some(Self::Webm),
+            _ => None,
+        }
+    }
+
     /// Parse the path file extension.
     /// Return None in case of no or invalid extension.
     pub fn from_path<P: AsRef<Path>>(path: P) -> Option<Self> {
         path.as_ref()
             .extension()
             .and_then(|ext| ext.to_str())
-            .and_then(|ext| match ext {
-                "mka" => Some(Self::Mka),
-                "mkv" => Some(Self::Mkv),
-                "ogg" => Some(Self::Ogg),
-                "webm" => Some(Self::Webm),
-                _ => None,
-            })
+            .and_then(Self::from_no_dot)
     }
 }

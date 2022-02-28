@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Interface for downloading streams and their metadata
-pub trait StreamDownloader {
+pub trait StreamDownloader: Sync {
     /// Get the playlist's videos IDs.
     ///
     /// The given id could refer to either a playlist ID or a video ID.
@@ -27,7 +27,7 @@ pub trait StreamDownloader {
     fn get_metadata(&self, video_id: &str) -> Result<Metadata>;
 
     /// Download the audio stream of the video with the corresponding ID.
-    fn download_audio<P: AsRef<Path>>(&self, path: P, video_id: &str) -> Result<()>;
+    fn download_audio(&self, path: &Path, video_id: &str) -> Result<()>;
 }
 
 /// Interface for the [youtube-dl](https://github.com/ytdl-org/youtube-dl) program
@@ -114,6 +114,14 @@ impl StreamDownloader for Ytdl {
                 .to_owned())
         };
 
+        // Remove potentially problematic characters from the title
+        let title = get_key("title")?;
+        let title = title
+            .split(['\'', '"', '/', '\\', '|', '~', '$', '#'])
+            .map(|s| s.trim())
+            .collect::<Vec<_>>()
+            .join(" ");
+
         let duration = json
             .get("duration")
             .context("Key 'duration' not found in JSON")?
@@ -121,18 +129,18 @@ impl StreamDownloader for Ytdl {
             .context("Value of key 'duration' is not a u64")?;
 
         Ok(Metadata {
-            title: get_key("title")?,
+            title,
+            duration,
             uploader: get_key("uploader")?,
             description: get_key("description")?,
-            duration,
         })
     }
 
-    fn download_audio<P: AsRef<Path>>(&self, path: P, video_id: &str) -> Result<()> {
+    fn download_audio(&self, path: &Path, video_id: &str) -> Result<()> {
         let res = self.run_check_availability(
             |cmd| {
                 cmd.arg("-q")
-                    .args([OsStr::new("-o"), path.as_ref().as_os_str()])
+                    .args([OsStr::new("-o"), path.as_os_str()])
                     .arg("--no-continue") // Or else fails when file already exists, even an empty one
                     .args(["-f", "bestaudio"])
                     .arg("--add-metadata")

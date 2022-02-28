@@ -1,68 +1,121 @@
 use std::{
     hint::unreachable_unchecked,
     path::{Path, PathBuf},
+    sync::{
+        mpsc::{Receiver, SyncSender},
+        Arc, Mutex,
+    },
 };
 
 use anyhow::Context;
-use log::debug;
+use log::{debug, info};
 use rayon_core::{ThreadPool, ThreadPoolBuilder};
-use regex::Regex;
 
 use crate::{
+    already_processed::AlreadyProcessed,
     io::{build_output_path, named_tempfile, touch},
     outside::StreamTransformer,
-    result::{bail, Result},
-    types::{Extension, Timestamp, Timestamps},
-    Metadata,
+    result::{err_msg, Result},
+    types::{Extension, Metadata, Timestamp, Timestamps},
 };
 
-pub struct Clipper<'a> {
-    stream_tsf: &'a dyn StreamTransformer,
+use super::{Actor, DownloadedStream, VideoTitle};
+
+pub struct ClipperActor<'a> {
     pool: ThreadPool,
+    stream_tsf: &'a dyn StreamTransformer,
+    out_dir: &'a Path,
+    ext: Extension,
+    cache: Arc<Mutex<AlreadyProcessed>>,
+
+    receive_channel: Option<Receiver<DownloadedStream>>,
+    send_channel: Option<SyncSender<VideoTitle>>,
 }
 
-impl<'a> Clipper<'a> {
-    pub fn new(stream_tsf: &'a dyn StreamTransformer) -> Result<Self> {
+impl Actor<DownloadedStream, VideoTitle> for ClipperActor<'_> {
+    fn set_receive_channel(&mut self, channel: Receiver<DownloadedStream>) {
+        self.receive_channel = Some(channel);
+    }
+
+    fn set_send_channel(&mut self, channel: SyncSender<VideoTitle>) {
+        self.send_channel = Some(channel);
+    }
+
+    fn run(mut self) -> Result<()> {
+        let receive_channel = self
+            .receive_channel
+            .take()
+            .ok_or_else(|| err_msg("Receive channel not set"))?;
+
+        let _send_channel = self
+            .send_channel
+            .take()
+            .ok_or_else(|| err_msg("Send channel not set"))?;
+
+        debug!("Actor started, waiting for a downloaded stream");
+
+        for DownloadedStream {
+            video_id,
+            file,
+            metadata,
+            timestamps,
+        } in receive_channel
+        {
+            debug!("Stream '{video_id}' received");
+            info!(
+                "Splitting '{}' into {} clips",
+                metadata.title,
+                timestamps.len()
+            );
+
+            self.create_clips(
+                file.path(),
+                self.out_dir,
+                &timestamps,
+                &metadata,
+                &video_id,
+                self.ext,
+            );
+
+            let mut cache = self.cache.lock().unwrap();
+            cache.push(video_id)?;
+
+            debug!("Iteration completed. Waiting for next stream");
+        }
+
+        info!("All iterations completed. Stopping the actor.");
+        Ok(())
+    }
+}
+
+impl<'a> ClipperActor<'a> {
+    pub fn new(
+        num_threads: usize,
+        stream_tsf: &'a dyn StreamTransformer,
+        out_dir: &'a Path,
+        ext: Extension,
+        cache: Arc<Mutex<AlreadyProcessed>>,
+    ) -> Result<Self> {
+        let pool = ThreadPoolBuilder::new().num_threads(num_threads).build()?;
         Ok(Self {
+            pool,
             stream_tsf,
-            pool: ThreadPoolBuilder::new().build()?,
+            out_dir,
+            ext,
+            cache,
+            receive_channel: None,
+            send_channel: None,
         })
     }
 
-    /// Try to extract the timestamps from the description.
-    pub fn extract_timestamps(&self, description: &str, clip_regex: &Regex) -> Result<Timestamps> {
-        let timestamps = Timestamps::extract_timestamps(description, clip_regex);
-        if timestamps.len() > 5 {
-            Ok(timestamps)
-        } else {
-            bail(
-                "Nope, too little timestamps, something went wrong. \
-                Description: {description}. Timestamps: {timestamps:?}",
-            )
-        }
-    }
-
-    /// Verify that the file stream duration is longer than the latest timestamp.
-    /// If there is a timestamp after the stream end, it would mean that the file
-    /// download stopped before completing.
-    pub fn is_file_complete(&self, stream_duration: u64, timestamps: &Timestamps) -> Result<bool> {
-        // The minimum number of second the last clip must last for the stream to be considered complete
-        const MIN_CLIP_LENGTH: u64 = 10;
-
-        let last_timestamp = timestamps.last().unwrap();
-        let last_secs = Timestamp::to_seconds(&last_timestamp.t_start);
-
-        Ok(last_secs + MIN_CLIP_LENGTH < stream_duration)
-    }
-
-    pub fn create_clips(
+    fn create_clips(
         &self,
         input: &Path,
         out_dir: &Path,
         timestamps: &Timestamps,
         metadata: &Metadata,
         video_id: &str,
-        extension: &str,
+        extension: Extension,
     ) {
         let album = format!("{} ({})", metadata.title, video_id);
         let preprocess = |start: &Timestamp, _| {
@@ -76,9 +129,21 @@ impl<'a> Clipper<'a> {
         };
 
         let process = |start, end, output: PathBuf| {
-            self.create_clip(input, &output, start, end, &album)
+            let out_tmp = named_tempfile(extension)
+                .context("Could not create tempfile")
+                .unwrap();
+
+            // Create clip to tempfile (slow, things may go bad)
+            Self::create_clip(self.stream_tsf, input, out_tmp.path(), start, end, &album)
                 .context("Could not create clip")
                 .unwrap();
+
+            // When finished, move to output file (fast, nearly no errors)
+            // First try to do a simple move
+            if std::fs::rename(&out_tmp, &output).is_err() {
+                debug!("Moving file failed, falling back to copying");
+                std::fs::copy(&out_tmp, &output).unwrap();
+            }
         };
 
         self.for_each_clip(timestamps, preprocess, &process);
@@ -130,7 +195,7 @@ impl<'a> Clipper<'a> {
     ///
     /// If `end` is not specified, clip will continue until the end of the stream.
     fn create_clip(
-        &self,
+        stream_tsf: &'a dyn StreamTransformer,
         input: &Path,
         output: &Path,
         start: &Timestamp,
@@ -141,11 +206,11 @@ impl<'a> Clipper<'a> {
         let out_ext = Extension::from_path(output).context("Invalid output extension")?;
         let tmp = named_tempfile(out_ext)?;
 
-        self.stream_tsf
+        stream_tsf
             .extract_clip(input, tmp.path(), start, end, album)
             .context("Could not extract a clip of the audio file from the timestamps")?;
 
-        self.stream_tsf
+        stream_tsf
             .normalize_audio(tmp.path(), output)
             .context("Could not normalize audio")?;
 

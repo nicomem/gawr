@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2022-03-03
+### Added
+- Cache comments
+    - Allow adding comments in the cache file, which will be ignored by it
+    - Ignore blank lines in the cache
+    - Add comments in the cache with the playlist ID used
+- Refactor the main pipeline to use the Actor design pattern
+    - Each actor runs concurrently and exchange messages through a one-way channel
+    - 2 actors: one for downloading, the other for processing
+    - This allows for downloading and processing at the same time
+    - Uses rendez-vous channels to avoid high disk/memory usage
+- Test multiple patterns for timestamp detection
+    - For every line in the description, every regex will be tested until one matches
+    - Update the default pattern(s) to detect more timestamps
+
+### Changed
+- Remove more problematic characters from title (for their file names)
+- Do all processes to temporary files, then simply move/copy to the output path
+    - Meaning that at all times, an output file is either empty or complete
+- Moved from `convert_case` dependency to `heck`
+    - The former did not handle some unicode titles correctly
+- Move very long debug logs to trace and add more logs
+
+### Removed
+- Do not verify the number of files created at each iteration
+
 ## [0.4.0] - 2022-02-27
 ### Added
 - Verify that the external programs are reachable at startup

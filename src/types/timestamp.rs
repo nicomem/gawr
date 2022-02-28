@@ -1,6 +1,6 @@
 use std::{fmt::Display, ops::Deref};
 
-use convert_case::{Case, Casing};
+use heck::ToTitleCase;
 use regex::Regex;
 
 #[derive(Debug)]
@@ -33,16 +33,29 @@ impl Timestamps {
         Self(data)
     }
 
-    pub fn extract_timestamps(description: &str, clip_regex: &Regex) -> Self {
-        let timestamps = clip_regex
-            .captures_iter(description)
+    pub fn extract_timestamps(description: &str, clip_regex: &[Regex]) -> Self {
+        // For every line, try every regex until one matches
+        let captures = description
+            .lines()
+            .map(str::trim)
+            .flat_map(|line| clip_regex.iter().flat_map(|re| re.captures(line)).next());
+
+        // For every line that matched one regex, construct the timestamp
+        let timestamps = captures
             .map(|cap| {
-                let title = cap.get(3).unwrap().as_str();
-                let title = title.replace('"', "");
+                let title = cap.name("title").unwrap().as_str();
+                let t_start = cap.name("time").unwrap().as_str();
+
+                // Remove potentially problematic characters from the title
+                let title = title
+                    .split(['\'', '"', '/', '\\', '|', '~', '$', '#'])
+                    .map(|s| s.trim())
+                    .collect::<Vec<_>>()
+                    .join(" ");
 
                 Timestamp {
-                    t_start: cap.get(1).unwrap().as_str().to_owned(),
-                    title: title.to_case(Case::Title),
+                    t_start: t_start.to_owned(),
+                    title: title.to_title_case(),
                 }
             })
             .collect();

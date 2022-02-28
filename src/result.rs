@@ -21,8 +21,12 @@ pub enum Error {
     Anyhow(#[from] anyhow::Error),
 }
 
+pub fn err_msg(msg: impl Into<Cow<'static, str>>) -> Error {
+    Error::Msg(msg.into())
+}
+
 pub fn bail<T>(msg: impl Into<Cow<'static, str>>) -> Result<T> {
-    Err(Error::Msg(msg.into()))
+    Err(err_msg(msg))
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

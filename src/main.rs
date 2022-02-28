@@ -1,44 +1,47 @@
+mod actors;
 mod already_processed;
 mod cli;
-mod clipper;
-mod file_counter;
 mod io;
+mod my_regex;
 mod outside;
 mod result;
 mod types;
 
-use std::path::Path;
+use std::sync::{
+    mpsc::{channel, sync_channel, Receiver, Sender},
+    Arc, Mutex,
+};
 
+use actors::{Actor, ClipperActor, DownloadActor, VideoId, VideoTitle};
 use anyhow::Context;
 use clap::Parser;
 use cli::Split;
-use log::{debug, error, info, warn};
+use log::info;
+use my_regex::DEFAULT_RE_LIST;
 use outside::{Ffmpeg, StreamDownloader, StreamTransformer, Ytdl};
-use regex::Regex;
-use result::Error::UnavailableStream;
-use types::{Metadata, Timestamps};
+use rayon_core::Scope;
 
-use crate::{
-    already_processed::AlreadyProcessed,
-    cli::Args,
-    clipper::Clipper,
-    file_counter::FileCounter,
-    io::named_tempfile,
-    result::Result,
-    types::{Extension, Timestamp},
-};
+use crate::{already_processed::AlreadyProcessed, cli::Args, result::Result};
 
 fn main() -> anyhow::Result<()> {
     // Initialize the environment & CLI
     dotenv::dotenv().ok();
-    env_logger::init();
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .parse_default_env()
+        .init();
     let args = Args::parse();
 
-    // Make sure the output directory is created
-    std::fs::create_dir_all(&args.out)?;
+    // Make sure the needed directories are created
+    std::fs::create_dir_all(&args.out).context("Could not create out directory")?;
+    if let Some(p) = args.cache.parent() {
+        std::fs::create_dir_all(p).context("Could not create cache parent directories")?;
+    }
 
     let (stream_dl, stream_tsf) = load_external_components(&args)?;
-    let (mut cache, mut file_counter, clipper) = load_internal_components(&args, &stream_tsf)?;
+    let cache = AlreadyProcessed::read_or_create(&args.cache, &args.id)
+        .context("Could not create or read cache file")?;
+    info!("{} items already processed", cache.len());
 
     // Download the playlist videos id
     info!("Get the playlist videos id");
@@ -47,71 +50,26 @@ fn main() -> anyhow::Result<()> {
         .context("Could not get playlist videos id")?;
     info!("{} videos in the playlist", videos_id.len());
 
-    let initial_count = file_counter.count();
-    let skip_timestamps = matches!(args.split, Split::Full);
-    for video_id in videos_id {
-        if cache.contains(&video_id) {
-            debug!("Video {video_id} already processed. Skipping it");
-            continue;
+    let cache = Arc::new(Mutex::new(cache));
+
+    rayon_core::scope(|scope| -> Result<()> {
+        let (input, output) = load_actors(scope, &stream_tsf, &stream_dl, &args, cache.clone())?;
+
+        // Fill the input channel with all the tasks
+        for video_id in videos_id {
+            input.send(video_id).unwrap();
         }
 
-        // Put mkv as the stream file format as:
-        // - Not giving any will cause an error (even though it may write another file format)
-        // - It should accept any kind of audio format
-        // With that, the stream data should be copied as-is, without modification
-        let tmp = named_tempfile(Extension::Mkv)?;
+        // Drop the input to indicate the end of the input data
+        drop(input);
 
-        let (metadata, timestamps) = match download_and_extract_metadata(
-            &clipper,
-            &stream_dl,
-            &video_id,
-            tmp.path(),
-            skip_timestamps,
-            &args.clip_regex,
-        ) {
-            Ok(res) => res,
-            Err(UnavailableStream) => {
-                error!("Video {video_id} is unavailable. Not downloaded but still added in cache");
-                cache.push(video_id)?;
-                continue;
-            }
-            err => err.context("Could not download and extract metadata and timestamps")?,
-        };
-
-        debug!("metadata = {metadata:?}");
-        debug!("timestamps = {timestamps}");
-
-        info!(
-            "Splitting '{}' into {} clips",
-            metadata.title,
-            timestamps.len()
-        );
-
-        clipper.create_clips(
-            tmp.path(),
-            &args.out,
-            &timestamps,
-            &metadata,
-            &video_id,
-            args.ext.with_dot(),
-        );
-
-        let nb_new_files = file_counter.count_new()?;
-        let nb_expected = timestamps.len();
-        if nb_new_files != nb_expected as isize {
-            warn!(
-                "Expected to have created {nb_expected} new clips, \
-                    but {nb_new_files} new files have been found since last time"
-            );
+        // Wait for the output to be closed
+        for _ in output {
+            // Do nothing
         }
 
-        cache.push(video_id)?;
-    }
-
-    info!(
-        "{} clips have been created during this session",
-        file_counter.count() - initial_count
-    );
+        Ok(())
+    })?;
 
     Ok(())
 }
@@ -131,56 +89,42 @@ fn load_external_components(
     Ok((ytdl, ffmpeg))
 }
 
-/// Load the main components. This will not write or download anything.
-fn load_internal_components<'args, 'ext>(
-    args: &'args Args,
-    stream_tsf: &'ext impl StreamTransformer,
-) -> Result<(AlreadyProcessed, FileCounter<'args>, Clipper<'ext>)> {
-    let cache = AlreadyProcessed::read_or_create(&args.cache)
-        .context("Could not create or read cache file")?;
-    info!("{} items already processed", cache.len());
+/// Link and load the actors in the scope and return the input and output channels
+fn load_actors<'a>(
+    scope: &Scope<'a>,
+    stream_tsf: &'a dyn StreamTransformer,
+    stream_dl: &'a dyn StreamDownloader,
+    args: &'a Args,
+    cache: Arc<Mutex<AlreadyProcessed>>,
+) -> Result<(Sender<VideoId>, Receiver<VideoTitle>)> {
+    // Run the clipper on all cpus except one to leave room for
+    // the rest of the program to run
+    let num_cpus = std::thread::available_parallelism()?;
+    let clipper_threads = (num_cpus.get() - 1).min(1);
 
-    let file_counter = FileCounter::new(&args.out).context("Could not initialize file counter")?;
+    let clip_regex = if let Some(clip_regex) = args.clip_regex.as_ref() {
+        clip_regex
+    } else {
+        &DEFAULT_RE_LIST
+    };
 
-    let clipper = Clipper::new(stream_tsf).context("Could not initialize the clipper")?;
+    let skip_timestamps = matches!(args.split, Split::Full);
 
-    Ok((cache, file_counter, clipper))
-}
+    let (input, receive) = channel();
+    let mut dl_actor = DownloadActor::new(stream_dl, skip_timestamps, clip_regex, cache.clone());
+    dl_actor.set_receive_channel(receive);
 
-fn download_and_extract_metadata<P: AsRef<Path>>(
-    clipper: &Clipper,
-    stream_dl: &impl StreamDownloader,
-    video_id: &str,
-    out: P,
-    skip_timestamps: bool,
-    clip_regex: &Regex,
-) -> Result<(Metadata, Timestamps)> {
-    let out = out.as_ref();
+    let mut clip_actor =
+        ClipperActor::new(clipper_threads, stream_tsf, &args.out, args.ext, cache)?;
+    let (send, receive) = sync_channel(0);
+    clip_actor.set_receive_channel(receive);
+    dl_actor.set_send_channel(send);
 
-    let metadata = stream_dl.get_metadata(video_id)?;
+    let (send, output) = sync_channel(0);
+    clip_actor.set_send_channel(send);
 
-    loop {
-        info!("Downloading video {video_id}");
-        stream_dl.download_audio(out, video_id)?;
+    scope.spawn(move |_| dl_actor.run().unwrap());
+    scope.spawn(move |_| clip_actor.run().unwrap());
 
-        if skip_timestamps {
-            info!("Downloaded file, skip timestamps extraction");
-
-            let start = Timestamp {
-                t_start: "00:00".to_string(),
-                title: metadata.title.to_string(),
-            };
-
-            return Ok((metadata, Timestamps::new(vec![start])));
-        } else {
-            info!("Downloaded file, splitting from timestamps");
-
-            let timestamps = clipper.extract_timestamps(&metadata.description, clip_regex)?;
-            if clipper.is_file_complete(metadata.duration, &timestamps)? {
-                return Ok((metadata, timestamps));
-            } else {
-                warn!("Downloaded file seems incomplete. Retry downloading it again");
-            }
-        }
-    }
+    Ok((input, output))
 }

@@ -18,7 +18,7 @@ pub fn touch<P: AsRef<Path>>(path: P) -> Result<()> {
 pub fn build_output_path<P: AsRef<Path>>(
     out_dir: P,
     title: &str,
-    extension: &str,
+    extension: Extension,
 ) -> Result<PathBuf> {
     let out_dir = out_dir.as_ref();
 
@@ -32,16 +32,18 @@ pub fn build_output_path<P: AsRef<Path>>(
         None
     };
 
+    let dot_ext = extension.with_dot();
+
     // Check filenames one by one until one does not exist
 
     // Format for 1st file: <title><ext>
-    if let Some(output) = check_filename(&format!("{title}{extension}")) {
+    if let Some(output) = check_filename(&format!("{title}{dot_ext}")) {
         return Ok(output);
     }
 
     // Format for 2nd file and up: <title> (<count>)<ext>
     for n in 2u16.. {
-        if let Some(output) = check_filename(&format!("{title} ({n}){extension}")) {
+        if let Some(output) = check_filename(&format!("{title} ({n}){dot_ext}")) {
             return Ok(output);
         }
     }
