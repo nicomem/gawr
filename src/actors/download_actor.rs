@@ -23,6 +23,7 @@ use super::{
     Actor,
 };
 
+#[derive(Debug)]
 pub struct DownloadActor<'a> {
     stream_dl: &'a dyn StreamDownloader,
     skip_timestamps: bool,
@@ -103,7 +104,7 @@ impl Actor<VideoId, DownloadedStream> for DownloadActor<'_> {
             debug!("Iteration completed. Waiting for next video ID");
         }
 
-        info!("All iterations completed. Stopping the actor.");
+        debug!("All iterations completed. Stopping the actor.");
         Ok(())
     }
 }

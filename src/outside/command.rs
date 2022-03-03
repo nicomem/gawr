@@ -25,13 +25,11 @@ bitflags! {
 ///
 /// The function returns an error only if the command failed to execute.
 /// If the program runs but returns a non-0 status code, it will not trigger an error.
-pub fn run_command<S: AsRef<str>, F: FnOnce(&mut Command) -> &mut Command>(
-    program: S,
+pub fn run_command<F: FnOnce(&mut Command) -> &mut Command>(
+    program: &str,
     f: F,
     capture: Capture,
 ) -> Result<Output> {
-    let program = program.as_ref();
-
     let is_debug = log::log_enabled!(log::Level::Debug);
     let get_io = |capture| {
         if capture {
@@ -62,8 +60,8 @@ pub fn run_command<S: AsRef<str>, F: FnOnce(&mut Command) -> &mut Command>(
 }
 
 /// Run the command and verify that it has returned a success status code.
-pub fn assert_success_command<S: AsRef<str>, F: FnOnce(&mut Command) -> &mut Command>(
-    program: S,
+pub fn assert_success_command<F: FnOnce(&mut Command) -> &mut Command>(
+    program: &str,
     f: F,
 ) -> Result<()> {
     let res = run_command(program, f, Capture::empty())?;

@@ -56,4 +56,9 @@ pub struct Args {
     /// Must use the [Regex crate syntax](https://docs.rs/regex/latest/regex/#syntax)
     #[clap(long, env=arg_env!("CLIP_REGEX"))]
     pub clip_regex: Option<Vec<Regex>>,
+
+    /// Randomize the order in which the videos are downloaded.
+    /// Do not influence how clips are processed.
+    #[clap(long, env=arg_env!("SHUFFLE"))]
+    pub shuffle: bool,
 }

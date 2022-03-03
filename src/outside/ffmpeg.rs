@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, path::Path};
+use std::{ffi::OsStr, fmt::Debug, path::Path};
 
 use anyhow::Context;
 
@@ -6,7 +6,7 @@ use crate::{result::Result, types::Timestamp};
 
 use super::command::{assert_success_command, run_command, Capture, FFMPEG, FFXXX_DEFAULT_ARGS};
 
-pub trait StreamTransformer: Sync {
+pub trait StreamTransformer: Sync + Debug {
     /// Extract a clip containing the stream data between the two
     /// timestamps from the input file to the output file.
     ///
@@ -26,6 +26,7 @@ pub trait StreamTransformer: Sync {
 }
 
 /// Interface for the [ffprobe](https://ffmpeg.org) program
+#[derive(Debug)]
 pub struct Ffmpeg;
 
 impl Ffmpeg {

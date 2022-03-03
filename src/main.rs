@@ -16,7 +16,7 @@ use actors::{Actor, ClipperActor, DownloadActor, VideoId, VideoTitle};
 use anyhow::Context;
 use clap::Parser;
 use cli::Split;
-use log::info;
+use log::{debug, info};
 use my_regex::DEFAULT_RE_LIST;
 use outside::{Ffmpeg, StreamDownloader, StreamTransformer, Ytdl};
 use rayon_core::Scope;
@@ -45,10 +45,15 @@ fn main() -> anyhow::Result<()> {
 
     // Download the playlist videos id
     info!("Get the playlist videos id");
-    let videos_id = stream_dl
+    let mut videos_id = stream_dl
         .get_playlist_videos_id(&args.id)
         .context("Could not get playlist videos id")?;
     info!("{} videos in the playlist", videos_id.len());
+
+    if args.shuffle {
+        debug!("Shuffling the playlist videos download order");
+        fastrand::shuffle(&mut videos_id);
+    }
 
     let cache = Arc::new(Mutex::new(cache));
 
@@ -71,6 +76,7 @@ fn main() -> anyhow::Result<()> {
         Ok(())
     })?;
 
+    info!("All tasks completed");
     Ok(())
 }
 

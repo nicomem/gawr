@@ -7,6 +7,7 @@ use std::{
 
 use crate::result::{bail, Result};
 
+#[derive(Debug)]
 pub struct AlreadyProcessed {
     ids: BTreeSet<String>,
     file: File,
@@ -14,14 +15,15 @@ pub struct AlreadyProcessed {
 
 impl AlreadyProcessed {
     const COMMENT_PREFIX: &'static str = "# ";
+    const COMMENT_DELIMITER: char = '#';
 
-    pub fn read_or_create<P: AsRef<Path>>(path: P, section_title: &str) -> Result<Self> {
+    pub fn read_or_create(path: &Path, section_title: &str) -> Result<Self> {
         // Open or create file from the start with RW rights
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .open(path.as_ref())?;
+            .open(path)?;
 
         // Read the entire file with each line as an id
         let reader = BufReader::new(&mut file);
@@ -31,16 +33,18 @@ impl AlreadyProcessed {
             .lines()
             .flatten()
             .map(|line| line.trim().to_string())
-            .filter(|line| !line.is_empty()) // Ignore blank lines
-            .filter(|line| {
-                // Ignore comments
-                if let Some(comment) = Self::parse_comment(line) {
-                    is_same_section = comment == section_title;
-                    false
+            .map(|line| {
+                if let Some((content, comment)) = line.split_once(Self::COMMENT_DELIMITER) {
+                    // If the line is only comment, it is a section title
+                    is_same_section = content.is_empty() && comment == section_title;
+                    content
                 } else {
-                    true
+                    &line
                 }
+                .trim()
+                .to_string()
             })
+            .filter(|line| !line.is_empty()) // Ignore blank lines
             .collect();
 
         // If the last section is not the same as the new one,
@@ -74,9 +78,5 @@ impl AlreadyProcessed {
 
     fn to_comment(msg: &str) -> String {
         format!("{}{msg}", Self::COMMENT_PREFIX)
-    }
-
-    fn parse_comment(line: &str) -> Option<&str> {
-        line.strip_prefix(Self::COMMENT_PREFIX)
     }
 }

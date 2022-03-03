@@ -13,7 +13,7 @@ use rayon_core::{ThreadPool, ThreadPoolBuilder};
 
 use crate::{
     already_processed::AlreadyProcessed,
-    io::{build_output_path, named_tempfile, touch},
+    io::{find_unused_prefix, named_tempfile, touch},
     outside::StreamTransformer,
     result::{err_msg, Result},
     types::{Extension, Metadata, Timestamp, Timestamps},
@@ -21,6 +21,7 @@ use crate::{
 
 use super::{Actor, DownloadedStream, VideoTitle};
 
+#[derive(Debug)]
 pub struct ClipperActor<'a> {
     pool: ThreadPool,
     stream_tsf: &'a dyn StreamTransformer,
@@ -83,7 +84,7 @@ impl Actor<DownloadedStream, VideoTitle> for ClipperActor<'_> {
             debug!("Iteration completed. Waiting for next stream");
         }
 
-        info!("All iterations completed. Stopping the actor.");
+        debug!("All iterations completed. Stopping the actor.");
         Ok(())
     }
 }
@@ -119,16 +120,18 @@ impl<'a> ClipperActor<'a> {
     ) {
         let album = format!("{} ({})", metadata.title, video_id);
         let preprocess = |start: &Timestamp, _| {
-            let output = build_output_path(&out_dir, &start.title, extension)
+            let mut output = find_unused_prefix(out_dir, &start.title, extension, true)
                 .context("Could not build output file path")
                 .unwrap();
 
-            touch(&output).unwrap();
+            // Use the .empty extension for the placeholder
+            output.set_extension("empty");
 
+            touch(&output).unwrap();
             output
         };
 
-        let process = |start, end, output: PathBuf| {
+        let process = |start, end, out_empty: PathBuf| {
             let out_tmp = named_tempfile(extension)
                 .context("Could not create tempfile")
                 .unwrap();
@@ -138,12 +141,17 @@ impl<'a> ClipperActor<'a> {
                 .context("Could not create clip")
                 .unwrap();
 
+            let output = out_empty.with_extension(extension.with_no_dot());
+
             // When finished, move to output file (fast, nearly no errors)
             // First try to do a simple move
             if std::fs::rename(&out_tmp, &output).is_err() {
                 debug!("Moving file failed, falling back to copying");
                 std::fs::copy(&out_tmp, &output).unwrap();
             }
+
+            // Remove the placeholder
+            std::fs::remove_file(out_empty).unwrap();
         };
 
         self.for_each_clip(timestamps, preprocess, &process);

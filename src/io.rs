@@ -10,26 +10,21 @@ use crate::{
     types::Extension,
 };
 
-pub fn touch<P: AsRef<Path>>(path: P) -> Result<()> {
+pub fn touch(path: &Path) -> Result<()> {
     OpenOptions::new().create(true).append(true).open(path)?;
     Ok(())
 }
 
-pub fn build_output_path<P: AsRef<Path>>(
-    out_dir: P,
+pub fn find_unused_prefix(
+    out_dir: &Path,
     title: &str,
     extension: Extension,
+    check_empty: bool,
 ) -> Result<PathBuf> {
-    let out_dir = out_dir.as_ref();
-
     let mut output = out_dir.to_path_buf();
-    let mut check_filename = |filename: &str| {
-        output.extend(std::iter::once(filename));
-        if !output.exists() {
-            return Some(output.clone());
-        }
-        output.pop();
-        None
+
+    let test_output = |output: &Path| {
+        !(output.exists() || (check_empty && output.with_extension("empty").exists()))
     };
 
     let dot_ext = extension.with_dot();
@@ -37,13 +32,15 @@ pub fn build_output_path<P: AsRef<Path>>(
     // Check filenames one by one until one does not exist
 
     // Format for 1st file: <title><ext>
-    if let Some(output) = check_filename(&format!("{title}{dot_ext}")) {
+    output.push(format!("{title}{dot_ext}"));
+    if test_output(&output) {
         return Ok(output);
     }
 
     // Format for 2nd file and up: <title> (<count>)<ext>
     for n in 2u16.. {
-        if let Some(output) = check_filename(&format!("{title} ({n}){dot_ext}")) {
+        output.set_file_name(format!("{title} ({n}){dot_ext}"));
+        if test_output(&output) {
             return Ok(output);
         }
     }

@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2022-03-03
+### Added
+- Empty output placeholders now have the `.empty` extension
+    - So if something bad happens, it is easier to see what is right and what is wrong
+- Add an option to randomize the order in which videos are downloaded
+- Allow cache comments after the content in a line
+    - But only consider comment-only lines as section titles
+- Added compilation flags in release mode for reducing the binary size (6.5M -> 2M)
+
 ## [0.5.0] - 2022-03-03
 ### Added
 - Cache comments

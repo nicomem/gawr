@@ -15,10 +15,21 @@ impl Extension {
     /// e.g. ".ext"
     pub fn with_dot(self) -> &'static str {
         match self {
-            Extension::Mka => ".mka",
-            Extension::Mkv => ".mkv",
-            Extension::Ogg => ".ogg",
-            Extension::Webm => ".webm",
+            Self::Mka => ".mka",
+            Self::Mkv => ".mkv",
+            Self::Ogg => ".ogg",
+            Self::Webm => ".webm",
+        }
+    }
+
+    /// Return the extension without the leading dot.
+    /// e.g. "ext"
+    pub fn with_no_dot(self) -> &'static str {
+        match self {
+            Self::Mka => "mka",
+            Self::Mkv => "mkv",
+            Self::Ogg => "ogg",
+            Self::Webm => "webm",
         }
     }
 
@@ -35,9 +46,8 @@ impl Extension {
 
     /// Parse the path file extension.
     /// Return None in case of no or invalid extension.
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Option<Self> {
-        path.as_ref()
-            .extension()
+    pub fn from_path(path: &Path) -> Option<Self> {
+        path.extension()
             .and_then(|ext| ext.to_str())
             .and_then(Self::from_no_dot)
     }

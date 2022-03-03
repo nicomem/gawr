@@ -5,6 +5,7 @@
 *.txt
 *.json
 *.part
+*.empty
 
 # Stream containers
 *.m4a

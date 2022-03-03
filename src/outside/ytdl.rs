@@ -1,5 +1,6 @@
 use std::{
     ffi::OsStr,
+    fmt::Debug,
     path::Path,
     process::{Command, Output},
 };
@@ -13,7 +14,7 @@ use crate::{
 };
 
 /// Interface for downloading streams and their metadata
-pub trait StreamDownloader: Sync {
+pub trait StreamDownloader: Sync + Debug {
     /// Get the playlist's videos IDs.
     ///
     /// The given id could refer to either a playlist ID or a video ID.
@@ -31,6 +32,7 @@ pub trait StreamDownloader: Sync {
 }
 
 /// Interface for the [youtube-dl](https://github.com/ytdl-org/youtube-dl) program
+#[derive(Debug)]
 pub struct Ytdl {
     program: &'static str,
 }
