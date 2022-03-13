@@ -8,19 +8,19 @@ mod result;
 mod types;
 mod utils;
 
-use std::sync::{
-    mpsc::{channel, sync_channel, Receiver, Sender},
-    Arc, Mutex,
-};
+use std::sync::{Arc, Mutex};
 
-use actors::{Actor, ClipperActor, DownloadActor, VideoId, VideoTitle};
+use actors::{
+    connect_actors, Actor, ClipperActor, DownloadActor, TimestampActor, VideoId, VideoTitle,
+};
 use anyhow::Context;
 use clap::Parser;
 use cli::Split;
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
+use crossbeam_utils::thread::{scope, Scope};
 use log::{debug, info};
 use my_regex::DEFAULT_RE_LIST;
 use outside::{Ffmpeg, StreamDownloader, StreamTransformer, Ytdl};
-use rayon_core::Scope;
 
 use crate::{already_processed::AlreadyProcessed, cli::Args, result::Result};
 
@@ -58,7 +58,7 @@ fn main() -> anyhow::Result<()> {
 
     let cache = Arc::new(Mutex::new(cache));
 
-    rayon_core::scope(|scope| -> Result<()> {
+    scope(|scope| -> Result<()> {
         let (input, output) = load_actors(scope, &stream_tsf, &stream_dl, &args, cache.clone())?;
 
         // Fill the input channel with all the tasks
@@ -75,7 +75,8 @@ fn main() -> anyhow::Result<()> {
         }
 
         Ok(())
-    })?;
+    })
+    .unwrap()?;
 
     info!("All tasks completed");
     Ok(())
@@ -106,8 +107,7 @@ fn load_actors<'a>(
 ) -> Result<(Sender<VideoId>, Receiver<VideoTitle>)> {
     // Run the clipper on all cpus except one to leave room for
     // the rest of the program to run
-    let num_cpus = std::thread::available_parallelism()?;
-    let clipper_threads = (num_cpus.get() - 1).min(1);
+    let clipper_threads = std::thread::available_parallelism()?.get();
 
     let clip_regex = if let Some(clip_regex) = args.clip_regex.as_ref() {
         clip_regex
@@ -117,21 +117,46 @@ fn load_actors<'a>(
 
     let skip_timestamps = matches!(args.split, Split::Full);
 
-    let (input, receive) = channel();
+    // Initialize the actors
     let mut dl_actor = DownloadActor::new(stream_dl, skip_timestamps, clip_regex, cache.clone());
+    let mut tstamp_actor = TimestampActor::new();
+    let mut clip_actors = Vec::with_capacity(clipper_threads);
+    for id in 0..clipper_threads {
+        clip_actors.push(ClipperActor::new(
+            id,
+            stream_tsf,
+            &args.out,
+            args.ext,
+            cache.clone(),
+        )?);
+    }
+
+    // Connect the actors together
+    let (input, receive) = unbounded();
     dl_actor.set_receive_channel(receive);
 
-    let mut clip_actor =
-        ClipperActor::new(clipper_threads, stream_tsf, &args.out, args.ext, cache)?;
-    let (send, receive) = sync_channel(0);
-    clip_actor.set_receive_channel(receive);
-    dl_actor.set_send_channel(send);
+    connect_actors(&mut dl_actor, &mut tstamp_actor, bounded(0));
 
-    let (send, output) = sync_channel(0);
-    clip_actor.set_send_channel(send);
+    let (send, receive) = bounded(clipper_threads);
+    for clip_actor in &mut clip_actors {
+        connect_actors(
+            &mut tstamp_actor,
+            clip_actor,
+            (send.clone(), receive.clone()),
+        );
+    }
 
+    let (send, output) = unbounded();
+    for clip_actor in &mut clip_actors {
+        clip_actor.set_send_channel(send.clone());
+    }
+
+    // Start the actors
     scope.spawn(move |_| dl_actor.run().unwrap());
-    scope.spawn(move |_| clip_actor.run().unwrap());
+    scope.spawn(move |_| tstamp_actor.run().unwrap());
+    for clip_actor in clip_actors {
+        scope.spawn(move |_| clip_actor.run().unwrap());
+    }
 
     Ok((input, output))
 }

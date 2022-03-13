@@ -9,9 +9,6 @@ pub enum Error {
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
-    Rayon(#[from] rayon_core::ThreadPoolBuildError),
-
-    #[error(transparent)]
     SerdeJson(#[from] serde_json::Error),
 
     #[error("{0}")]

@@ -3,7 +3,7 @@ use std::{fmt::Display, ops::Deref};
 use heck::ToTitleCase;
 use regex::Regex;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Timestamp {
     pub t_start: String,
     pub title: String,

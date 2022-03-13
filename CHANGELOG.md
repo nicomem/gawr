@@ -6,11 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2022-03-13
+### Added
+- Refactor `ClipperActor` to handle more clips in parallel
+    - Before it processed all clips of one stream in its own thread pool
+    - Now multiple `ClipperActor` are spawned and can process clips from multiple streams in parallel
+    - This means that:
+        - Multiple streams will be processed in parallel in `--split=full` mode
+        - CPU will not be underused during the last clips in `--split=clips` mode
+    - tldr: **things will go faster**
+- Add `TimestampActor` whose role is only to dispatch the timestamped clips produced by the `DownloadActor`
+    - This enables the previous actor to directly begin downloading the next stream instead of waiting that the next actor receives the channel message
+    - tldr: **less waiting between stream downloads**
+
+### Fixed
+- Fix incorrect number of threads used for clipping
+
 ## [0.6.1] - 2022-03-13
 ### Added
 - Add crate information from `Cargo.toml` to binary cli
 
-### Fix
+### Fixed
 - Fix a mutex deadlock
 
 ## [0.6.0] - 2022-03-03

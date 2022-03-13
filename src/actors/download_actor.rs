@@ -1,12 +1,10 @@
 use std::{
     path::Path,
-    sync::{
-        mpsc::{Receiver, SyncSender},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
 };
 
 use anyhow::Context;
+use crossbeam_channel::{Receiver, Sender};
 use log::{debug, error, info, trace, warn};
 use regex::Regex;
 
@@ -19,10 +17,7 @@ use crate::{
     utils::MutexUtils,
 };
 
-use super::{
-    message::{DownloadedStream, VideoId},
-    Actor,
-};
+use super::{Actor, DownloadedStream, VideoId};
 
 #[derive(Debug)]
 pub struct DownloadActor<'a> {
@@ -32,7 +27,7 @@ pub struct DownloadActor<'a> {
     cache: Arc<Mutex<AlreadyProcessed>>,
 
     receive_channel: Option<Receiver<VideoId>>,
-    send_channel: Option<SyncSender<DownloadedStream>>,
+    send_channel: Option<Sender<DownloadedStream>>,
 }
 
 impl Actor<VideoId, DownloadedStream> for DownloadActor<'_> {
@@ -40,7 +35,7 @@ impl Actor<VideoId, DownloadedStream> for DownloadActor<'_> {
         self.receive_channel = Some(channel);
     }
 
-    fn set_send_channel(&mut self, channel: SyncSender<DownloadedStream>) {
+    fn set_send_channel(&mut self, channel: Sender<DownloadedStream>) {
         self.send_channel = Some(channel);
     }
 
@@ -69,10 +64,10 @@ impl Actor<VideoId, DownloadedStream> for DownloadActor<'_> {
             // - Not giving any will cause an error (even though it may write another file format)
             // - It should accept any kind of audio format
             // With that, the stream data should be copied as-is, without modification
-            let output = named_tempfile(Extension::Mkv)?;
+            let stream_file = named_tempfile(Extension::Mkv)?;
 
             let (metadata, timestamps) =
-                match self.download_and_extract_metadata(&video_id, output.path()) {
+                match self.download_and_extract_metadata(&video_id, stream_file.path()) {
                     Ok(res) => res,
                     Err(Error::UnavailableStream) => {
                         error!(
@@ -95,7 +90,7 @@ impl Actor<VideoId, DownloadedStream> for DownloadActor<'_> {
             send_channel
                 .send(DownloadedStream {
                     video_id,
-                    file: output,
+                    file: stream_file,
                     metadata,
                     timestamps,
                 })

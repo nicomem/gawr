@@ -14,7 +14,6 @@ pub struct AlreadyProcessed {
 }
 
 impl AlreadyProcessed {
-    const COMMENT_PREFIX: &'static str = "# ";
     const COMMENT_DELIMITER: char = '#';
 
     pub fn read_or_create(path: &Path, section_title: &str) -> Result<Self> {
@@ -35,6 +34,8 @@ impl AlreadyProcessed {
             .map(|line| line.trim().to_string())
             .map(|line| {
                 if let Some((content, comment)) = line.split_once(Self::COMMENT_DELIMITER) {
+                    let comment = comment.trim();
+
                     // If the line is only comment, it is a section title
                     is_same_section = content.is_empty() && comment == section_title;
                     content
@@ -77,6 +78,6 @@ impl AlreadyProcessed {
     }
 
     fn to_comment(msg: &str) -> String {
-        format!("{}{msg}", Self::COMMENT_PREFIX)
+        format!("{} {msg}", Self::COMMENT_DELIMITER)
     }
 }
