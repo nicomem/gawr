@@ -6,6 +6,7 @@ mod my_regex;
 mod outside;
 mod result;
 mod types;
+mod utils;
 
 use std::sync::{
     mpsc::{channel, sync_channel, Receiver, Sender},

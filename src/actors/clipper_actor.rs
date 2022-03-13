@@ -17,6 +17,7 @@ use crate::{
     outside::StreamTransformer,
     result::{err_msg, Result},
     types::{Extension, Metadata, Timestamp, Timestamps},
+    utils::MutexUtils,
 };
 
 use super::{Actor, DownloadedStream, VideoTitle};
@@ -78,8 +79,7 @@ impl Actor<DownloadedStream, VideoTitle> for ClipperActor<'_> {
                 self.ext,
             );
 
-            let mut cache = self.cache.lock().unwrap();
-            cache.push(video_id)?;
+            self.cache.with_lock(|mut cache| cache.push(video_id))?;
 
             debug!("Iteration completed. Waiting for next stream");
         }

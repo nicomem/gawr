@@ -16,6 +16,7 @@ use crate::{
     outside::StreamDownloader,
     result::{err_msg, Error, Result},
     types::{Extension, Metadata, Timestamp, Timestamps},
+    utils::MutexUtils,
 };
 
 use super::{
@@ -59,8 +60,7 @@ impl Actor<VideoId, DownloadedStream> for DownloadActor<'_> {
         for video_id in receive_channel {
             debug!("Video ID '{video_id}' received");
 
-            let cache = self.cache.lock().unwrap();
-            if cache.contains(&video_id) {
+            if self.cache.with_lock(|cache| cache.contains(&video_id)) {
                 debug!("Video already processed. Skipping it");
                 continue;
             }
@@ -79,8 +79,8 @@ impl Actor<VideoId, DownloadedStream> for DownloadActor<'_> {
                             "Video {video_id} is unavailable. \
                             Not downloaded but still added in cache"
                         );
-                        let mut cache = self.cache.lock().unwrap();
-                        cache.push(video_id.to_string())?;
+                        self.cache
+                            .with_lock(|mut cache| cache.push(video_id.to_string()))?;
                         continue;
                     }
                     err => err.context("Could not download and extract metadata and timestamps")?,

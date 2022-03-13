@@ -20,6 +20,7 @@ macro_rules! arg_env {
 /// Wrapper-tool around `youtube-dl` to create an audio library out of web videos.
 /// Download, clip, and normalize audio streams.
 #[derive(Parser, Debug)]
+#[clap(author, version, about)]
 pub struct Args {
     /// The playlist ID of all videos to download
     /// or the ID of the single video to download

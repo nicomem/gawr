@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2022-03-13
+### Added
+- Add crate information from `Cargo.toml` to binary cli
+
+### Fix
+- Fix a mutex deadlock
+
 ## [0.6.0] - 2022-03-03
 ### Added
 - Empty output placeholders now have the `.empty` extension
