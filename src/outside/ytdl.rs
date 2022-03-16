@@ -5,11 +5,11 @@ use std::{
     process::{Command, Output},
 };
 
-use anyhow::Context;
+use miette::{miette, Context, IntoDiagnostic};
 
 use super::command::{assert_success_command, run_command, Capture, YT_DL, YT_DLP};
 use crate::{
-    result::{bail, Error, Result},
+    result::{Error, Result},
     types::Metadata,
 };
 
@@ -47,7 +47,7 @@ impl Ytdl {
             // Check `youtube-dl`
             Ok(Self { program: YT_DL })
         } else {
-            bail("Neither yt-dl not youtube-dl found")
+            Err(miette!("Neither yt-dl not youtube-dl found").into())
         }
     }
 
@@ -62,9 +62,13 @@ impl Ytdl {
         let res = run_command(self.program, f, capture | Capture::STDERR)?;
 
         let stderr = String::from_utf8_lossy(&res.stderr);
-        let is_unavailable = stderr
-            .lines()
-            .any(|line| line.starts_with("ERROR:") && line.to_lowercase().contains("unavailable"));
+        let is_unavailable = stderr.lines().any(|line| {
+            if !line.starts_with("ERROR:") {
+                return false;
+            }
+            let line = line.to_lowercase();
+            line.contains("private") || line.contains("unavailable")
+        });
         if is_unavailable {
             Err(Error::UnavailableStream)
         } else {
@@ -103,16 +107,19 @@ impl StreamDownloader for Ytdl {
         )?;
         let output = String::from_utf8_lossy(&res.stdout);
 
-        let json =
-            serde_json::from_str::<serde_json::Value>(&output).context("Could not parse json")?;
-        let json = json.as_object().context("JSON is not an object")?;
+        let json = serde_json::from_str::<serde_json::Value>(&output)
+            .into_diagnostic()
+            .wrap_err("Could not parse json")?;
+        let json = json
+            .as_object()
+            .ok_or_else(|| miette!("JSON is not an object"))?;
 
         let get_key = |key| -> Result<String> {
             Ok(json
                 .get(key)
-                .with_context(|| format!("Key '{key}' not found in JSON"))?
+                .ok_or_else(|| miette!(format!("Key '{key}' not found in JSON")))?
                 .as_str()
-                .with_context(|| format!("Value of key '{key}' is not a string"))?
+                .ok_or_else(|| miette!(format!("Value of key '{key}' is not a string")))?
                 .to_owned())
         };
 
@@ -126,9 +133,9 @@ impl StreamDownloader for Ytdl {
 
         let duration = json
             .get("duration")
-            .context("Key 'duration' not found in JSON")?
+            .ok_or_else(|| miette!("Key 'duration' not found in JSON"))?
             .as_u64()
-            .context("Value of key 'duration' is not a u64")?;
+            .ok_or_else(|| miette!("Value of key 'duration' is not a u64"))?;
 
         Ok(Metadata {
             title,
@@ -158,7 +165,7 @@ impl StreamDownloader for Ytdl {
         if res.status.success() {
             Ok(())
         } else {
-            bail("Command did run but was not successful")
+            Err(miette!("Command did run but was not successful").into())
         }
     }
 }

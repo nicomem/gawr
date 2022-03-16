@@ -2,8 +2,7 @@ use std::process::{Command, Output, Stdio};
 
 use bitflags::bitflags;
 use log::{debug, trace};
-
-use crate::result::{bail, Result};
+use miette::{miette, IntoDiagnostic, Result};
 
 pub const YT_DL: &str = "youtube-dl";
 pub const YT_DLP: &str = "yt-dlp";
@@ -46,7 +45,7 @@ pub fn run_command<F: FnOnce(&mut Command) -> &mut Command>(
         .stderr(get_io(is_debug || capture.contains(Capture::STDERR)));
 
     debug!("Executing command: {cmd:?}");
-    let res = cmd.output()?;
+    let res = cmd.output().into_diagnostic()?;
 
     if is_debug {
         debug!("status: {}", res.status);
@@ -68,6 +67,6 @@ pub fn assert_success_command<F: FnOnce(&mut Command) -> &mut Command>(
     if res.status.success() {
         Ok(())
     } else {
-        bail("Command did run but was not successful")
+        Err(miette!("Command did run but was not successful"))
     }
 }

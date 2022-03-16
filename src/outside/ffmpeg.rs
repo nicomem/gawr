@@ -1,8 +1,8 @@
 use std::{ffi::OsStr, fmt::Debug, path::Path};
 
-use anyhow::Context;
+use miette::{miette, Context, IntoDiagnostic, Result};
 
-use crate::{result::Result, types::Timestamp};
+use crate::types::Timestamp;
 
 use super::command::{assert_success_command, run_command, Capture, FFMPEG, FFXXX_DEFAULT_ARGS};
 
@@ -99,15 +99,17 @@ impl StreamTransformer for Ffmpeg {
         let json_str: String = json_parts.join("\n");
 
         let json = serde_json::from_str::<serde_json::Value>(&json_str)
-            .context("Could not parse JSON output")?;
-        let json = json.as_object().context("JSON output is not an object")?;
+            .into_diagnostic()
+            .wrap_err("Could not parse JSON output")?;
+        let json = json
+            .as_object()
+            .ok_or_else(|| miette!("JSON output is not an object"))?;
 
         let get_str = |k: &str| -> Result<&str> {
-            Ok(json
-                .get(k)
-                .with_context(|| format!("Key {k} not found in JSON object"))?
+            json.get(k)
+                .ok_or_else(|| miette!(format!("Key {k} not found in JSON object")))?
                 .as_str()
-                .with_context(|| format!("Value of key {k} is not a string"))?)
+                .ok_or_else(|| miette!(format!("Value of key {k} is not a string")))
         };
 
         let input_i = get_str("input_i")?;

@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2022-03-27
+### Added
+- Add option to assume a certain number of cores instead of automatically using the system's logical cores
+- Now able to properly resume after a crash, remembering which clips have been or not processed
+- Delete every empty file in the output directory at startup
+    - This avoids creating clips with incremented indexes after a crash
+
+### Changed
+- Switch to [miette](https://github.com/zkat/miette) for prettier error reporting
+- Use a Sqlite database for cache instead of a custom text format
+    - This enables more flexibility for future features at the cost of a worse readable file
+    - **The old format is not compatible anymore and cache must be regenerated**
+
 ## [0.7.0] - 2022-03-13
 ### Added
 - Refactor `ClipperActor` to handle more clips in parallel

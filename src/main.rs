@@ -1,6 +1,6 @@
 mod actors;
-mod already_processed;
 mod cli;
+mod database;
 mod io;
 mod my_regex;
 mod outside;
@@ -8,23 +8,27 @@ mod result;
 mod types;
 mod utils;
 
-use std::sync::{Arc, Mutex};
+use std::num::NonZeroUsize;
 
 use actors::{
     connect_actors, Actor, ClipperActor, DownloadActor, TimestampActor, VideoId, VideoTitle,
 };
-use anyhow::Context;
 use clap::Parser;
 use cli::Split;
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use crossbeam_utils::thread::{scope, Scope};
 use log::{debug, info};
+use miette::{Context, IntoDiagnostic};
 use my_regex::DEFAULT_RE_LIST;
 use outside::{Ffmpeg, StreamDownloader, StreamTransformer, Ytdl};
 
-use crate::{already_processed::AlreadyProcessed, cli::Args, result::Result};
+use crate::{
+    cli::Args,
+    database::{CacheDb, ProcessedState, Sqlite},
+    result::Result,
+};
 
-fn main() -> anyhow::Result<()> {
+fn main() -> miette::Result<()> {
     // Initialize the environment & CLI
     dotenv::dotenv().ok();
     env_logger::builder()
@@ -34,21 +38,28 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     // Make sure the needed directories are created
-    std::fs::create_dir_all(&args.out).context("Could not create out directory")?;
+    std::fs::create_dir_all(&args.out)
+        .into_diagnostic()
+        .wrap_err("Could not create out directory")?;
     if let Some(p) = args.cache.parent() {
-        std::fs::create_dir_all(p).context("Could not create cache parent directories")?;
+        std::fs::create_dir_all(p)
+            .into_diagnostic()
+            .wrap_err("Could not create cache parent directories")?;
     }
 
     let (stream_dl, stream_tsf) = load_external_components(&args)?;
-    let cache = AlreadyProcessed::read_or_create(&args.cache, &args.id)
-        .context("Could not create or read cache file")?;
-    info!("{} items already processed", cache.len());
+    let cache = Sqlite::read_or_create(&args.cache).wrap_err("Could not load cache")?;
+    let nb_videos = cache.count_videos(None)?;
+    let nb_completed = cache.count_videos(Some(ProcessedState::Completed))?;
+    let nb_pending = nb_videos - nb_completed;
+    info!("{nb_videos} videos in cache: {nb_completed} completed and {nb_pending} pending");
 
     // Download the playlist videos id
     info!("Get the playlist videos id");
     let mut videos_id = stream_dl
         .get_playlist_videos_id(&args.id)
-        .context("Could not get playlist videos id")?;
+        .map_err(miette::Report::from)
+        .wrap_err("Could not get playlist videos id")?;
     info!("{} videos in the playlist", videos_id.len());
 
     if args.shuffle {
@@ -56,10 +67,8 @@ fn main() -> anyhow::Result<()> {
         fastrand::shuffle(&mut videos_id);
     }
 
-    let cache = Arc::new(Mutex::new(cache));
-
     scope(|scope| -> Result<()> {
-        let (input, output) = load_actors(scope, &stream_tsf, &stream_dl, &args, cache.clone())?;
+        let (input, output) = load_actors(scope, &stream_tsf, &stream_dl, &args, &cache)?;
 
         // Fill the input channel with all the tasks
         for video_id in videos_id {
@@ -76,7 +85,8 @@ fn main() -> anyhow::Result<()> {
 
         Ok(())
     })
-    .unwrap()?;
+    .unwrap()
+    .map_err(miette::Report::from)?;
 
     info!("All tasks completed");
     Ok(())
@@ -103,11 +113,14 @@ fn load_actors<'a>(
     stream_tsf: &'a dyn StreamTransformer,
     stream_dl: &'a dyn StreamDownloader,
     args: &'a Args,
-    cache: Arc<Mutex<AlreadyProcessed>>,
+    cache: &'a Sqlite,
 ) -> Result<(Sender<VideoId>, Receiver<VideoTitle>)> {
+    let nb_cores = NonZeroUsize::new(args.cores)
+        .unwrap_or_else(|| std::thread::available_parallelism().unwrap());
+
     // Run the clipper on all cpus except one to leave room for
     // the rest of the program to run
-    let clipper_threads = std::thread::available_parallelism()?.get();
+    let clipper_threads = usize::max(1, nb_cores.get() - 1);
 
     let clip_regex = if let Some(clip_regex) = args.clip_regex.as_ref() {
         clip_regex
@@ -118,16 +131,12 @@ fn load_actors<'a>(
     let skip_timestamps = matches!(args.split, Split::Full);
 
     // Initialize the actors
-    let mut dl_actor = DownloadActor::new(stream_dl, skip_timestamps, clip_regex, cache.clone());
-    let mut tstamp_actor = TimestampActor::new();
+    let mut dl_actor = DownloadActor::new(stream_dl, skip_timestamps, clip_regex, cache);
+    let mut tstamp_actor = TimestampActor::new(cache);
     let mut clip_actors = Vec::with_capacity(clipper_threads);
     for id in 0..clipper_threads {
         clip_actors.push(ClipperActor::new(
-            id,
-            stream_tsf,
-            &args.out,
-            args.ext,
-            cache.clone(),
+            id, stream_tsf, &args.out, args.ext, cache,
         )?);
     }
 
@@ -152,10 +161,25 @@ fn load_actors<'a>(
     }
 
     // Start the actors
-    scope.spawn(move |_| dl_actor.run().unwrap());
-    scope.spawn(move |_| tstamp_actor.run().unwrap());
-    for clip_actor in clip_actors {
-        scope.spawn(move |_| clip_actor.run().unwrap());
+    scope.spawn(move |_| {
+        dl_actor
+            .run()
+            .wrap_err("Download Actor crashed unexpectedly")
+            .unwrap()
+    });
+    scope.spawn(move |_| {
+        tstamp_actor
+            .run()
+            .wrap_err("Timestamp Actor crashed unexpectedly")
+            .unwrap()
+    });
+    for (i, clip_actor) in clip_actors.into_iter().enumerate() {
+        scope.spawn(move |_| {
+            clip_actor
+                .run()
+                .wrap_err_with(|| format!("Clipper Actor {i} crashed unexpectedly"))
+                .unwrap()
+        });
     }
 
     Ok((input, output))

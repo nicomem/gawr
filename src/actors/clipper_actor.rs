@@ -3,16 +3,15 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::Context;
 use crossbeam_channel::{Receiver, Sender};
-use log::{debug, info};
+use log::{debug, info, warn};
+use miette::{miette, Context, IntoDiagnostic, Result};
 use once_cell::sync::OnceCell;
 
 use crate::{
-    already_processed::AlreadyProcessed,
+    database::{CacheDb, Sqlite},
     io::{find_unused_prefix, named_tempfile, touch},
     outside::StreamTransformer,
-    result::{err_msg, Result},
     types::{Extension, Timestamp},
     utils::MutexUtils,
 };
@@ -25,7 +24,7 @@ pub struct ClipperActor<'a> {
     stream_tsf: &'a dyn StreamTransformer,
     out_dir: &'a Path,
     ext: Extension,
-    cache: Arc<Mutex<AlreadyProcessed>>,
+    cache: &'a Sqlite,
 
     receive_channel: Option<Receiver<TimestampedClip>>,
     send_channel: Option<Sender<VideoTitle>>,
@@ -44,12 +43,17 @@ impl Actor<TimestampedClip, VideoTitle> for ClipperActor<'_> {
         let receive_channel = self
             .receive_channel
             .take()
-            .ok_or_else(|| err_msg("Receive channel not set"))?;
+            .ok_or_else(|| miette!("Receive channel not set"))?;
 
         let _send_channel = self
             .send_channel
             .take()
-            .ok_or_else(|| err_msg("Send channel not set"))?;
+            .ok_or_else(|| miette!("Send channel not set"))?;
+
+        if self.id == 0 {
+            self.delete_empty_files()
+                .wrap_err("Could not delete empty files")?;
+        }
 
         debug!(
             "{}: Actor started, waiting for a downloaded stream",
@@ -60,6 +64,7 @@ impl Actor<TimestampedClip, VideoTitle> for ClipperActor<'_> {
             stream_info,
             start,
             end,
+            clip_idx,
         } in receive_channel
         {
             let video_id = &stream_info.video_id;
@@ -77,10 +82,7 @@ impl Actor<TimestampedClip, VideoTitle> for ClipperActor<'_> {
             );
 
             let out_empty = self.reserve_output_path(self.out_dir, &start.title, self.ext);
-
-            let out_tmp = named_tempfile(self.ext)
-                .context("Could not create tempfile")
-                .unwrap();
+            let out_tmp = named_tempfile(self.ext).wrap_err("Could not create tempfile")?;
 
             // Create clip to tempfile (slow, things may go bad)
             let album = format!("{} ({})", metadata.title, video_id);
@@ -91,8 +93,7 @@ impl Actor<TimestampedClip, VideoTitle> for ClipperActor<'_> {
                 end.as_ref(),
                 &album,
             )
-            .context("Could not create clip")
-            .unwrap();
+            .wrap_err("Could not create clip")?;
 
             let output = out_empty.with_extension(self.ext.with_no_dot());
 
@@ -103,6 +104,8 @@ impl Actor<TimestampedClip, VideoTitle> for ClipperActor<'_> {
                 std::fs::copy(&out_tmp, &output).unwrap();
             }
 
+            self.cache.complete_work(stream_info.db_id, clip_idx)?;
+
             // Remove the placeholder
             std::fs::remove_file(out_empty).unwrap();
 
@@ -110,8 +113,7 @@ impl Actor<TimestampedClip, VideoTitle> for ClipperActor<'_> {
 
             // If last clip processed, add video_id to cache
             if Arc::strong_count(&stream_info) == 1 {
-                self.cache
-                    .with_lock(|mut cache| cache.push(video_id.to_string()))?;
+                self.cache.set_video_as_completed(stream_info.db_id)?;
             }
 
             debug!("{}: Iteration completed. Waiting for next clip", self.id);
@@ -128,7 +130,7 @@ impl<'a> ClipperActor<'a> {
         stream_tsf: &'a dyn StreamTransformer,
         out_dir: &'a Path,
         ext: Extension,
-        cache: Arc<Mutex<AlreadyProcessed>>,
+        cache: &'a Sqlite,
     ) -> Result<Self> {
         Ok(Self {
             id,
@@ -183,17 +185,39 @@ impl<'a> ClipperActor<'a> {
         album: &str,
     ) -> Result<()> {
         // Create a temporary file with the correct extension
-        let out_ext = Extension::from_path(output).context("Invalid output extension")?;
+        let out_ext =
+            Extension::from_path(output).ok_or_else(|| miette!("Invalid output extension"))?;
         let tmp = named_tempfile(out_ext)?;
 
         self.stream_tsf
             .extract_clip(input, tmp.path(), start, end, album)
-            .context("Could not extract a clip of the audio file from the timestamps")?;
+            .wrap_err("Could not extract a clip of the audio file from the timestamps")?;
 
         self.stream_tsf
             .normalize_audio(tmp.path(), output)
-            .context("Could not normalize audio")?;
+            .wrap_err("Could not normalize audio")?;
 
+        Ok(())
+    }
+
+    /// Delete every file with the "empty" extension in the output directory
+    fn delete_empty_files(&self) -> Result<()> {
+        for entry in self
+            .out_dir
+            .read_dir()
+            .into_diagnostic()
+            .wrap_err("Could not read output directory")?
+        {
+            let entry = entry.into_diagnostic()?;
+            let path = entry.path();
+            if let Some(ext) = path.extension() {
+                if path.is_file() && ext.eq_ignore_ascii_case("empty") {
+                    if let Err(err) = std::fs::remove_file(&path) {
+                        warn!("Could not remove file '{}': {}", path.display(), err);
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }

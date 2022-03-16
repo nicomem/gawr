@@ -3,15 +3,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use miette::{miette, IntoDiagnostic, Result};
 use tempfile::NamedTempFile;
 
-use crate::{
-    result::{bail, Result},
-    types::Extension,
-};
+use crate::types::Extension;
 
 pub fn touch(path: &Path) -> Result<()> {
-    OpenOptions::new().create(true).append(true).open(path)?;
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .into_diagnostic()?;
     Ok(())
 }
 
@@ -45,7 +47,9 @@ pub fn find_unused_prefix(
         }
     }
 
-    bail("Code is broken or you have really REALLY too much files with the same title")
+    Err(miette!(
+        "Code is broken or you have really REALLY too much files with the same title"
+    ))
 }
 
 /// Create a named temporary file and return its handle.
@@ -53,7 +57,8 @@ pub fn find_unused_prefix(
 /// The file destructor will be called at the handle drop.
 /// **As such, one must not simply get the file path and drop the handle.**
 pub fn named_tempfile(extension: Extension) -> Result<NamedTempFile> {
-    Ok(tempfile::Builder::new()
+    tempfile::Builder::new()
         .suffix(extension.with_dot())
-        .tempfile()?)
+        .tempfile()
+        .into_diagnostic()
 }

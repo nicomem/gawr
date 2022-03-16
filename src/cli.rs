@@ -62,4 +62,11 @@ pub struct Args {
     /// Do not influence how clips are processed.
     #[clap(long, env=arg_env!("SHUFFLE"))]
     pub shuffle: bool,
+
+    /// Assume that the machine has this number of cores.
+    /// This can be used to increase or decrease the number of worker threads spawned.
+    ///
+    /// When using a value of 0, it will determine automatically the number of cores from the system.
+    #[clap(long, default_value_t=0, env=arg_env!("CORES"))]
+    pub cores: usize,
 }

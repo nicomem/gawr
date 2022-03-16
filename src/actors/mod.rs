@@ -3,14 +3,17 @@ mod download_actor;
 mod message;
 mod timestamp_actor;
 
-pub use clipper_actor::ClipperActor;
 use crossbeam_channel::{Receiver, Sender};
+use miette::Result;
+
+pub use clipper_actor::ClipperActor;
 pub use download_actor::DownloadActor;
 pub use message::*;
 pub use timestamp_actor::TimestampActor;
 
-use crate::result::Result;
-
+/// A trait for implementing the Actor design pattern.
+///
+/// An object implementing this trait can receive messages, process them and send back messages to the next actor.
 pub trait Actor<From, To> {
     fn set_receive_channel(&mut self, channel: Receiver<From>);
 

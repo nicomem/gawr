@@ -1,20 +1,15 @@
-use std::{
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::path::Path;
 
-use anyhow::Context;
 use crossbeam_channel::{Receiver, Sender};
 use log::{debug, error, info, trace, warn};
+use miette::{miette, Context, IntoDiagnostic, Result};
 use regex::Regex;
 
 use crate::{
-    already_processed::AlreadyProcessed,
+    database::{CacheDb, ProcessedState, Sqlite},
     io::named_tempfile,
     outside::StreamDownloader,
-    result::{err_msg, Error, Result},
     types::{Extension, Metadata, Timestamp, Timestamps},
-    utils::MutexUtils,
 };
 
 use super::{Actor, DownloadedStream, VideoId};
@@ -24,7 +19,7 @@ pub struct DownloadActor<'a> {
     stream_dl: &'a dyn StreamDownloader,
     skip_timestamps: bool,
     clip_regex: &'a [Regex],
-    cache: Arc<Mutex<AlreadyProcessed>>,
+    cache: &'a Sqlite,
 
     receive_channel: Option<Receiver<VideoId>>,
     send_channel: Option<Sender<DownloadedStream>>,
@@ -43,19 +38,20 @@ impl Actor<VideoId, DownloadedStream> for DownloadActor<'_> {
         let receive_channel = self
             .receive_channel
             .take()
-            .ok_or_else(|| err_msg("Receive channel not set"))?;
+            .ok_or_else(|| miette!("Receive channel not set"))?;
 
         let send_channel = self
             .send_channel
             .take()
-            .ok_or_else(|| err_msg("Send channel not set"))?;
+            .ok_or_else(|| miette!("Send channel not set"))?;
 
         debug!("Actor started, waiting for a video ID");
 
         for video_id in receive_channel {
             debug!("Video ID '{video_id}' received");
 
-            if self.cache.with_lock(|cache| cache.contains(&video_id)) {
+            let (db_id, video_state) = self.cache.check_video(&video_id)?;
+            if video_state == ProcessedState::Completed {
                 debug!("Video already processed. Skipping it");
                 continue;
             }
@@ -66,20 +62,22 @@ impl Actor<VideoId, DownloadedStream> for DownloadActor<'_> {
             // With that, the stream data should be copied as-is, without modification
             let stream_file = named_tempfile(Extension::Mkv)?;
 
-            let (metadata, timestamps) =
-                match self.download_and_extract_metadata(&video_id, stream_file.path()) {
-                    Ok(res) => res,
-                    Err(Error::UnavailableStream) => {
-                        error!(
-                            "Video {video_id} is unavailable. \
+            let (metadata, timestamps) = match self
+                .download_and_extract_metadata(&video_id, stream_file.path())
+            {
+                Ok(res) => res,
+                Err(crate::result::Error::UnavailableStream) => {
+                    error!(
+                        "Video {video_id} is unavailable. \
                             Not downloaded but still added in cache"
-                        );
-                        self.cache
-                            .with_lock(|mut cache| cache.push(video_id.to_string()))?;
-                        continue;
-                    }
-                    err => err.context("Could not download and extract metadata and timestamps")?,
-                };
+                    );
+                    self.cache.set_video_as_completed(db_id)?;
+                    continue;
+                }
+                Err(crate::result::Error::Miette(report)) => {
+                    Err(report.wrap_err("Could not download and extract metadata and timestamps"))?
+                }
+            };
 
             debug!("title       = {}", metadata.title);
             debug!("uploader    = {}", metadata.uploader);
@@ -93,8 +91,11 @@ impl Actor<VideoId, DownloadedStream> for DownloadActor<'_> {
                     file: stream_file,
                     metadata,
                     timestamps,
+                    db_id,
+                    video_state,
                 })
-                .unwrap();
+                .into_diagnostic()
+                .wrap_err("Could not send message")?;
 
             debug!("Iteration completed. Waiting for next video ID");
         }
@@ -109,7 +110,7 @@ impl<'a> DownloadActor<'a> {
         stream_dl: &'a dyn StreamDownloader,
         skip_timestamps: bool,
         clip_regex: &'a [Regex],
-        cache: Arc<Mutex<AlreadyProcessed>>,
+        cache: &'a Sqlite,
     ) -> Self {
         Self {
             stream_dl,
@@ -125,8 +126,11 @@ impl<'a> DownloadActor<'a> {
         &self,
         video_id: &str,
         out: &Path,
-    ) -> Result<(Metadata, Timestamps)> {
-        let metadata = self.stream_dl.get_metadata(video_id)?;
+    ) -> crate::result::Result<(Metadata, Timestamps)> {
+        let metadata = self
+            .stream_dl
+            .get_metadata(video_id)
+            .map_err(|err| err.wrap_err_with(|| "Could not get stream metadata"))?;
 
         loop {
             info!("Downloading video {video_id}");
