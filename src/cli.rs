@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{ArgEnum, Parser};
 use regex::Regex;
 
-use crate::types::Extension;
+use crate::types::{Bitrate, Extension};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ArgEnum)]
 pub enum Split {
@@ -69,4 +69,13 @@ pub struct Args {
     /// When using a value of 0, it will determine automatically the number of cores from the system.
     #[clap(long, default_value_t=0, env=arg_env!("CORES"))]
     pub cores: usize,
+
+    /// The logging level to use
+    #[clap(long, default_value_t=tracing::Level::INFO, env=arg_env!("LOG"))]
+    pub log: tracing::Level,
+
+    /// The audio bitrate to use for output files.
+    /// Must follow the `ffmpeg` bitrate format.
+    #[clap(long, default_value="96K", env=arg_env!("BITRATE"))]
+    pub bitrate: Bitrate,
 }

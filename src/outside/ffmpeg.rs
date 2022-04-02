@@ -2,7 +2,7 @@ use std::{ffi::OsStr, fmt::Debug, path::Path};
 
 use miette::{miette, Context, IntoDiagnostic, Result};
 
-use crate::types::Timestamp;
+use crate::types::{Bitrate, Timestamp};
 
 use super::command::{assert_success_command, run_command, Capture, FFMPEG, FFXXX_DEFAULT_ARGS};
 
@@ -22,7 +22,7 @@ pub trait StreamTransformer: Sync + Debug {
     ) -> Result<()>;
 
     /// Normalize an audio stream
-    fn normalize_audio(&self, input: &Path, output: &Path) -> Result<()>;
+    fn normalize_audio(&self, input: &Path, output: &Path, bitrate: Bitrate) -> Result<()>;
 }
 
 /// Interface for the [ffprobe](https://ffmpeg.org) program
@@ -32,9 +32,10 @@ pub struct Ffmpeg;
 impl Ffmpeg {
     /// Verify that the `ffmpeg` binary is reachable
     pub fn new() -> Result<Self> {
-        assert_success_command(FFMPEG, |cmd| cmd.arg("-version"))?;
-
-        Ok(Self)
+        match assert_success_command(FFMPEG, |cmd| cmd.arg("-version")) {
+            Ok(_) => Ok(Self),
+            Err(_) => Err(miette!("ffmpeg not found")),
+        }
     }
 }
 
@@ -64,7 +65,7 @@ impl StreamTransformer for Ffmpeg {
         })
     }
 
-    fn normalize_audio(&self, input: &Path, output: &Path) -> Result<()> {
+    fn normalize_audio(&self, input: &Path, output: &Path, bitrate: Bitrate) -> Result<()> {
         // First pass to generate the statistics
         let input = input.as_os_str();
         let res = run_command(
@@ -133,7 +134,7 @@ impl StreamTransformer for Ffmpeg {
                 .args([OsStr::new("-i"), input])
                 .args(["-pass", "2"])
                 .args(["-filter:a", &filter])
-                .args(["-c:a", "libopus", "-b:a", "128K"])
+                .args(["-c:a", "libopus", "-b:a", &bitrate.to_string()])
                 .arg(output)
         })
     }

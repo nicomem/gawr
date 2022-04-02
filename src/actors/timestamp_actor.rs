@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender};
-use log::{debug, info};
 use miette::{miette, Context, IntoDiagnostic, Result};
+use tracing::{debug, info};
 
 use crate::{
     actors::StreamInfo,

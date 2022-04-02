@@ -1,12 +1,12 @@
 use std::{fmt::Write, path::Path, sync::RwLock};
 
-use log::debug;
 use miette::{Context, IntoDiagnostic, Result};
 use rusqlite::{
     params,
     types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, Value, ValueRef},
     Connection, OptionalExtension, ToSql,
 };
+use tracing::debug;
 
 use super::{CacheDb, ClipIdx, ProcessedState, VideoId};
 

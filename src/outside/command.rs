@@ -1,8 +1,8 @@
 use std::process::{Command, Output, Stdio};
 
 use bitflags::bitflags;
-use log::{debug, trace};
 use miette::{miette, IntoDiagnostic, Result};
+use tracing::{debug, trace};
 
 pub const YT_DL: &str = "youtube-dl";
 pub const YT_DLP: &str = "yt-dlp";
@@ -29,7 +29,7 @@ pub fn run_command<F: FnOnce(&mut Command) -> &mut Command>(
     f: F,
     capture: Capture,
 ) -> Result<Output> {
-    let is_debug = log::log_enabled!(log::Level::Debug);
+    let is_debug = tracing::enabled!(tracing::Level::DEBUG);
     let get_io = |capture| {
         if capture {
             Stdio::piped()

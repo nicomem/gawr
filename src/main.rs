@@ -2,6 +2,7 @@ mod actors;
 mod cli;
 mod database;
 mod io;
+mod logging;
 mod my_regex;
 mod outside;
 mod result;
@@ -16,26 +17,25 @@ use actors::{
 use clap::Parser;
 use cli::Split;
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
-use crossbeam_utils::thread::{scope, Scope};
-use log::{debug, info};
 use miette::{Context, IntoDiagnostic};
 use my_regex::DEFAULT_RE_LIST;
 use outside::{Ffmpeg, StreamDownloader, StreamTransformer, Ytdl};
+use tracing::{debug, info};
 
 use crate::{
     cli::Args,
     database::{CacheDb, ProcessedState, Sqlite},
+    logging::init_logging,
     result::Result,
 };
 
 fn main() -> miette::Result<()> {
     // Initialize the environment & CLI
     dotenv::dotenv().ok();
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .parse_default_env()
-        .init();
+
     let args = Args::parse();
+
+    init_logging(args.log).wrap_err("Could not initialize logging")?;
 
     // Make sure the needed directories are created
     std::fs::create_dir_all(&args.out)
@@ -47,10 +47,16 @@ fn main() -> miette::Result<()> {
             .wrap_err("Could not create cache parent directories")?;
     }
 
-    let (stream_dl, stream_tsf) = load_external_components(&args)?;
+    let (stream_dl, stream_tsf) = load_external_components(&args)
+        .map_err(miette::Report::from)
+        .wrap_err("Could not load external components")?;
     let cache = Sqlite::read_or_create(&args.cache).wrap_err("Could not load cache")?;
-    let nb_videos = cache.count_videos(None)?;
-    let nb_completed = cache.count_videos(Some(ProcessedState::Completed))?;
+    let nb_videos = cache
+        .count_videos(None)
+        .wrap_err("Could not count videos in cache")?;
+    let nb_completed = cache
+        .count_videos(Some(ProcessedState::Completed))
+        .wrap_err("Could not count videos in cache")?;
     let nb_pending = nb_videos - nb_completed;
     info!("{nb_videos} videos in cache: {nb_completed} completed and {nb_pending} pending");
 
@@ -67,7 +73,7 @@ fn main() -> miette::Result<()> {
         fastrand::shuffle(&mut videos_id);
     }
 
-    scope(|scope| -> Result<()> {
+    std::thread::scope(|scope| -> Result<()> {
         let (input, output) = load_actors(scope, &stream_tsf, &stream_dl, &args, &cache)?;
 
         // Fill the input channel with all the tasks
@@ -84,9 +90,7 @@ fn main() -> miette::Result<()> {
         }
 
         Ok(())
-    })
-    .unwrap()
-    .map_err(miette::Report::from)?;
+    })?;
 
     info!("All tasks completed");
     Ok(())
@@ -109,7 +113,7 @@ fn load_external_components(
 
 /// Link and load the actors in the scope and return the input and output channels
 fn load_actors<'a>(
-    scope: &Scope<'a>,
+    scope: &'a std::thread::Scope<'a, '_>,
     stream_tsf: &'a dyn StreamTransformer,
     stream_dl: &'a dyn StreamDownloader,
     args: &'a Args,
@@ -136,7 +140,12 @@ fn load_actors<'a>(
     let mut clip_actors = Vec::with_capacity(clipper_threads);
     for id in 0..clipper_threads {
         clip_actors.push(ClipperActor::new(
-            id, stream_tsf, &args.out, args.ext, cache,
+            id,
+            stream_tsf,
+            &args.out,
+            args.ext,
+            cache,
+            args.bitrate,
         )?);
     }
 
@@ -161,25 +170,36 @@ fn load_actors<'a>(
     }
 
     // Start the actors
-    scope.spawn(move |_| {
-        dl_actor
-            .run()
-            .wrap_err("Download Actor crashed unexpectedly")
-            .unwrap()
-    });
-    scope.spawn(move |_| {
-        tstamp_actor
-            .run()
-            .wrap_err("Timestamp Actor crashed unexpectedly")
-            .unwrap()
-    });
-    for (i, clip_actor) in clip_actors.into_iter().enumerate() {
-        scope.spawn(move |_| {
-            clip_actor
+    std::thread::Builder::new()
+        .name("DownloadActor".to_string())
+        .spawn_scoped(scope, move || {
+            dl_actor
                 .run()
-                .wrap_err_with(|| format!("Clipper Actor {i} crashed unexpectedly"))
+                .wrap_err("Download Actor crashed unexpectedly")
                 .unwrap()
-        });
+        })
+        .into_diagnostic()?;
+
+    std::thread::Builder::new()
+        .name("TimestampActor".to_string())
+        .spawn_scoped(scope, move || {
+            tstamp_actor
+                .run()
+                .wrap_err("Timestamp Actor crashed unexpectedly")
+                .unwrap()
+        })
+        .into_diagnostic()?;
+
+    for (i, clip_actor) in clip_actors.into_iter().enumerate() {
+        std::thread::Builder::new()
+            .name(format!("ClipperActor-{i}"))
+            .spawn_scoped(scope, move || {
+                clip_actor
+                    .run()
+                    .wrap_err_with(|| format!("Clipper Actor {i} crashed unexpectedly"))
+                    .unwrap()
+            })
+            .into_diagnostic()?;
     }
 
     Ok((input, output))

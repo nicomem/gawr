@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use crossbeam_channel::{Receiver, Sender};
-use log::{debug, error, info, trace, warn};
 use miette::{miette, Context, IntoDiagnostic, Result};
 use regex::Regex;
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     database::{CacheDb, ProcessedState, Sqlite},

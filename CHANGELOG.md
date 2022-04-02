@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2022-07-29
+### Added
+- Add the `log` and `bitrate` command line argument
+- Name threads based on the actor (+ number if multiple actors of the same type)
+    - Logs are prettier as they use the thread name instead of the rust module name
+- A beautiful *chef's kiss* README
+
+### Changed
+- Change the logging system from `log` to `tracing`
+    - Logs should be more compact
+
+### Fixed
+- If `ffmpeg` is not installed, the error message simply says so instead of cryptic things
+
 ## [0.8.0] - 2022-03-27
 ### Added
 - Add option to assume a certain number of cores instead of automatically using the system's logical cores

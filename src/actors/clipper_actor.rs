@@ -4,15 +4,15 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, Sender};
-use log::{debug, info, warn};
 use miette::{miette, Context, IntoDiagnostic, Result};
 use once_cell::sync::OnceCell;
+use tracing::{debug, info, warn};
 
 use crate::{
     database::{CacheDb, Sqlite},
     io::{find_unused_prefix, named_tempfile, touch},
     outside::StreamTransformer,
-    types::{Extension, Timestamp},
+    types::{Bitrate, Extension, Timestamp},
     utils::MutexUtils,
 };
 
@@ -25,6 +25,7 @@ pub struct ClipperActor<'a> {
     out_dir: &'a Path,
     ext: Extension,
     cache: &'a Sqlite,
+    bitrate: Bitrate,
 
     receive_channel: Option<Receiver<TimestampedClip>>,
     send_channel: Option<Sender<VideoTitle>>,
@@ -55,10 +56,7 @@ impl Actor<TimestampedClip, VideoTitle> for ClipperActor<'_> {
                 .wrap_err("Could not delete empty files")?;
         }
 
-        debug!(
-            "{}: Actor started, waiting for a downloaded stream",
-            self.id
-        );
+        debug!("Actor started, waiting for a downloaded stream");
 
         for TimestampedClip {
             stream_info,
@@ -71,15 +69,18 @@ impl Actor<TimestampedClip, VideoTitle> for ClipperActor<'_> {
             let stream_file = &stream_info.stream_file;
             let metadata = &stream_info.metadata;
 
-            debug!("{}: Stream '{video_id}' received", self.id);
-            info!(
-                "{}: Clipping '{}' ({} - {}) into '{}'",
-                self.id,
-                metadata.title,
-                start.t_start,
-                end.as_ref().map_or("END", |end| end.t_start.as_str()),
-                start.title
-            );
+            debug!("Stream '{}' received", video_id);
+            if end.is_none() && metadata.title == start.title {
+                info!("Clipping '{}' entire stream into one file", metadata.title);
+            } else {
+                info!(
+                    "Clipping '{}' ({} - {}) into '{}'",
+                    metadata.title,
+                    start.t_start,
+                    end.as_ref().map_or("END", |end| end.t_start.as_str()),
+                    start.title
+                );
+            }
 
             let out_empty = self.reserve_output_path(self.out_dir, &start.title, self.ext);
             let out_tmp = named_tempfile(self.ext).wrap_err("Could not create tempfile")?;
@@ -109,17 +110,17 @@ impl Actor<TimestampedClip, VideoTitle> for ClipperActor<'_> {
             // Remove the placeholder
             std::fs::remove_file(out_empty).unwrap();
 
-            info!("{}: Clip '{}' completed", self.id, start.title);
+            info!("Clip '{}' completed", start.title);
 
             // If last clip processed, add video_id to cache
             if Arc::strong_count(&stream_info) == 1 {
                 self.cache.set_video_as_completed(stream_info.db_id)?;
             }
 
-            debug!("{}: Iteration completed. Waiting for next clip", self.id);
+            debug!("Iteration completed. Waiting for next clip");
         }
 
-        debug!("{}: All iterations completed. Stopping the actor.", self.id);
+        debug!("All iterations completed. Stopping the actor");
         Ok(())
     }
 }
@@ -131,6 +132,7 @@ impl<'a> ClipperActor<'a> {
         out_dir: &'a Path,
         ext: Extension,
         cache: &'a Sqlite,
+        bitrate: Bitrate,
     ) -> Result<Self> {
         Ok(Self {
             id,
@@ -138,6 +140,7 @@ impl<'a> ClipperActor<'a> {
             out_dir,
             ext,
             cache,
+            bitrate,
             receive_channel: None,
             send_channel: None,
         })
@@ -194,7 +197,7 @@ impl<'a> ClipperActor<'a> {
             .wrap_err("Could not extract a clip of the audio file from the timestamps")?;
 
         self.stream_tsf
-            .normalize_audio(tmp.path(), output)
+            .normalize_audio(tmp.path(), output, self.bitrate)
             .wrap_err("Could not normalize audio")?;
 
         Ok(())
