@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: release ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-gnu]
+    steps:
+    - name: Install packages
+      run: sudo apt-get install gcc-mingw-w64
+
+    - uses: actions/checkout@v3
+    - name: Install latest stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+        components: rustfmt, clippy
+
+    - name: Format
+      run: cargo fmt --check
+    - name: Check
+      run: cargo check --target ${{ matrix.target }}
+    - name: Build
+      run: cargo build --target ${{ matrix.target }}
+    

@@ -14,16 +14,14 @@ use std::num::NonZeroUsize;
 use actors::{
     connect_actors, Actor, ClipperActor, DownloadActor, TimestampActor, VideoId, VideoTitle,
 };
-use clap::Parser;
-use cli::Split;
+use cli::{AppArgs, Split};
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use miette::{Context, IntoDiagnostic};
-use my_regex::DEFAULT_RE_LIST;
 use outside::{Ffmpeg, StreamDownloader, StreamTransformer, Ytdl};
 use tracing::{debug, info};
 
 use crate::{
-    cli::Args,
+    cli::parse_cli,
     database::{CacheDb, ProcessedState, Sqlite},
     logging::init_logging,
     result::Result,
@@ -31,11 +29,9 @@ use crate::{
 
 fn main() -> miette::Result<()> {
     // Initialize the environment & CLI
-    dotenv::dotenv().ok();
+    let args = parse_cli()?;
 
-    let args = Args::parse();
-
-    init_logging(args.log).wrap_err("Could not initialize logging")?;
+    init_logging(args.log.0).wrap_err("Could not initialize logging")?;
 
     // Make sure the needed directories are created
     std::fs::create_dir_all(&args.out)
@@ -62,10 +58,22 @@ fn main() -> miette::Result<()> {
 
     // Download the playlist videos id
     info!("Get the playlist videos id");
-    let mut videos_id = stream_dl
-        .get_playlist_videos_id(&args.id)
-        .map_err(miette::Report::from)
-        .wrap_err("Could not get playlist videos id")?;
+    let mut videos_id: Vec<String> = args
+        .ids
+        .iter()
+        .map(|s| -> Result<Vec<String>> {
+            Ok(stream_dl
+                .get_playlist_videos_id(s)
+                .map_err(miette::Report::from)
+                .wrap_err("Could not get playlist videos id")?)
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+
+    // .map_err(miette::Report::from)
+    // .wrap_err("Could not get playlist videos id")?;
     info!("{} videos in the playlist", videos_id.len());
 
     if args.shuffle {
@@ -98,7 +106,7 @@ fn main() -> miette::Result<()> {
 
 /// Load the external components
 fn load_external_components(
-    _args: &Args,
+    _args: &AppArgs,
 ) -> Result<(impl StreamDownloader, impl StreamTransformer)> {
     // Construct the handles concurrently as executing an external program
     // is not instantaneous. That way we can avoid adding the costs
@@ -116,7 +124,7 @@ fn load_actors<'a>(
     scope: &'a std::thread::Scope<'a, '_>,
     stream_tsf: &'a dyn StreamTransformer,
     stream_dl: &'a dyn StreamDownloader,
-    args: &'a Args,
+    args: &'a AppArgs,
     cache: &'a Sqlite,
 ) -> Result<(Sender<VideoId>, Receiver<VideoTitle>)> {
     let nb_cores = NonZeroUsize::new(args.cores)
@@ -126,16 +134,10 @@ fn load_actors<'a>(
     // the rest of the program to run
     let clipper_threads = usize::max(1, nb_cores.get() - 1);
 
-    let clip_regex = if let Some(clip_regex) = args.clip_regex.as_ref() {
-        clip_regex
-    } else {
-        &DEFAULT_RE_LIST
-    };
-
     let skip_timestamps = matches!(args.split, Split::Full);
 
     // Initialize the actors
-    let mut dl_actor = DownloadActor::new(stream_dl, skip_timestamps, clip_regex, cache);
+    let mut dl_actor = DownloadActor::new(stream_dl, skip_timestamps, &args.clip_regex, cache);
     let mut tstamp_actor = TimestampActor::new(cache);
     let mut clip_actors = Vec::with_capacity(clipper_threads);
     for id in 0..clipper_threads {

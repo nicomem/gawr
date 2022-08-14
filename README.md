@@ -1,11 +1,25 @@
 # gawr
 
-A music downloader archive tool thingie
+[![Build Status](https://github.com/nicomem/gawr/actions/workflows/ci.yml/badge.svg)](https://github.com/nicomem/gawr/actions/workflows/ci.yml)
+
+An audio archiver tool to create an audio library out of web videos. Download, clip, and normalize audio streams
+
+## CHANGELOG
+
+Please see the [CHANGELOG](CHANGELOG.md) for a release history.
+
+## Documentation quick links
+
+* [Pre-requisites](#pre-requisites)
+* [How to build & run](#how-to-build--run)
+* [Configuration](#configuration)
+* [How it works](#how-it-works)
+* [Contributing](#contributing)
 
 ## Pre-requisites
 
 - A Rust environment to build the project
-  - Tested on version 1.64
+  - Latest stable and above is supported. May or may not work on previous versions
 - Either `yt-dlp` or `youtube-dl`
 - `ffmpeg`
 
@@ -22,10 +36,107 @@ cd /some/where/under/the/rainbow
 gawr --help
 ```
 
-To check the required / optional arguments, check the `--help` command, it should be quite descriptive.
+## Configuration
 
-The tool also reads environment variables and `.env` file, also check the `--help` command to see the environment variables to set, and their currently read values.
-- This can be quite useful to avoid writing the same arguments every time, and simply run `gawr` to update the audio archive
+This tool has multiple ways to be configured:
+
+- [Command line arguments](#command-line-arguments)
+- [Environment variables](#environment-variables)
+- [Configuration file](#configuration-file)
+
+If a configuration variable is present in multiple of those locations, the priority is the following: `Command line arguments` > `Environment variables` > `Configuration file` > `Default values`.
+
+### Command Line Arguments
+
+Available command line arguments can be checked with the `--help` argument :
+
+```
+USAGE:
+    gawr [OPTIONS]
+
+OPTIONS:
+        --bitrate <bitrate>
+            The audio bitrate to use for output files. Must follow the `ffmpeg` bitrate format
+
+        --cache <cache>
+            The path to the cache file, avoiding processing multiple times the same videos
+
+        --clip_regex <clip_regex>
+            Regular expressions to extract timestamps from description.
+            Must capture `time` and `title` groups (starting timestamp & clip title).
+            
+            For every description line, every pattern will be tested until one matches.
+            A default pattern that should handle most cases is used if none is provided.
+            
+            Must use the [Regex crate syntax](https://docs.rs/regex/latest/regex/#syntax)
+
+        --config <config>
+            The path to the TOML config file [default: .gawr.toml]
+
+        --cores <cores>
+            Assume the machine has this number of cores. Used to modify the number of worker threads
+            spawned.
+            
+            When using a value of 0 (default), auto-detect the number of cores from the system
+
+        --ext <ext>
+            The file extension to use for the output files. Defines the file container format to use
+            [possible values: Mka, Mkv, Ogg, Webm]
+
+    -h, --help
+            Print help information
+
+        --id <id>
+            The IDs of playlists or videos
+
+        --log <log>
+            The logging level to use [possible values: ERROR, WARN, INFO, DEBUG, TRACE]
+
+        --out <out>
+            The path to the output directory
+
+        --shuffle
+            Randomize the order in which the videos are downloaded. Do not influence how clips are
+            processed
+
+        --split <split>
+            Either keep the entire video or create clips based on timestamps in the description
+            [possible values: Full, Clips]
+
+    -V, --version
+            Print version information
+```
+
+### Environment Variables
+
+Configuration variables can also be set using environment variables.
+
+To do so, simply add the `GAWR_` prefix and uppercase the variable.
+For example `GAWR_CLIP_REGEX=...`.
+
+### Configuration File
+
+Finally, environment variables can be set using a [TOML](https://toml.io/) file.
+By default, the one read is `.gawr.toml` but this can be set using the `--config` command line argument.
+
+```toml
+# Required variables (dummy template values)
+id = ["<ID>", "<ID>"]
+out = "<PATH>"
+cache = "<CACHE>"
+split = "<clips|full>"
+
+# Optional variables (default values)
+bitrate = 96
+clip_regex = [
+    "^(?:\\d+\\. *)?(?P<time>[0-9]+(:[0-9]+)+) *.? +(?:[0-9]+(:[0-9]+)+)? *.? +(?P<title>.+)$",
+    "^(?:\\d+\\. *)?(?P<title>.+) *.? +(?P<time>[0-9]+(:[0-9]+)+) *.? +(?:[0-9]+(:[0-9]+)+)?$",
+]
+cores = 0
+ext = "ogg"
+log = "info"
+shuffle = false
+```
 
 ## How it works
 
@@ -37,11 +148,14 @@ The tool also reads environment variables and `.env` file, also check the `--hel
 
 ### Long version
 
-#### Initialization
+#### Configuration & Initialization
 
 This is where the tool starts and:
-- reads the `.env` file
-- parses the command line arguments
+- parse the command line arguments
+- read the environment variables and configuration file
+- combine all of them and verify all conf variables are valid and the required ones have been specified
+
+Then:
 - checks if the external programs are present (`yt-dlp` or `youtube-dl`, and `ffmpeg`)
 - initializes the [actors](#the-actors)
 

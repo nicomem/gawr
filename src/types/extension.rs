@@ -1,13 +1,16 @@
 use std::path::Path;
 
-use clap::ArgEnum;
+use serde::Deserialize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ArgEnum)]
-pub enum Extension {
-    Mka,
-    Mkv,
-    Ogg,
-    Webm,
+clap::arg_enum! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Extension {
+        Mka,
+        Mkv,
+        Ogg,
+        Webm,
+    }
 }
 
 impl Extension {

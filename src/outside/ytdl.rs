@@ -13,6 +13,11 @@ use crate::{
     types::Metadata,
 };
 
+/// A list of characters that may cause problems to other programs
+const PROBLEMATIC_CHARS: &[char] = &[
+    '"', '\'', '/', '\\', '|', '~', '$', '#', ':', '*', '<', '>', '?', ',',
+];
+
 /// Interface for downloading streams and their metadata
 pub trait StreamDownloader: Sync + Debug {
     /// Get the playlist's videos IDs.
@@ -126,7 +131,7 @@ impl StreamDownloader for Ytdl {
         // Remove potentially problematic characters from the title
         let title = get_key("title")?;
         let title = title
-            .split(['\'', '"', '/', '\\', '|', '~', '$', '#'])
+            .split(PROBLEMATIC_CHARS)
             .map(|s| s.trim())
             .collect::<Vec<_>>()
             .join(" ");

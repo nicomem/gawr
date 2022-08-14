@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2022-08-14
+### Added
+- Now reads from a TOML configuration file
+- More problematic characters are removed from output filenames
+- Add project CI
+
+### Changed
+- Rework the CLI to allow for reading configuration from a TOML file
+    - This allows for more flexible configuration
+    - But is more complex and do not have all the nice `clap` things right out of the box
+
 ## [0.9.0] - 2022-07-29
 ### Added
 - Add the `log` and `bitrate` command line argument

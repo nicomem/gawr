@@ -8,6 +8,8 @@
 *.empty
 *.db
 
+.gawr.*
+
 # Stream containers
 *.m4a
 *.mka
