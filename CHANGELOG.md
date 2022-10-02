@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2022-10-02
+### Changed
+- Clap upgraded to version 4, this changes how the CLI is displayed
+
 ## [1.0.0] - 2022-08-14
 ### Added
 - Now reads from a TOML configuration file

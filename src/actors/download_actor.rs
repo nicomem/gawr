@@ -147,7 +147,7 @@ impl<'a> DownloadActor<'a> {
                     Timestamps::extract_timestamps(&metadata.description, self.clip_regex);
 
                 debug!("Timestamps: {}", timestamps);
-                if !Self::is_file_complete(metadata.duration, &timestamps)? {
+                if !Self::is_file_complete(metadata.duration, &timestamps) {
                     warn!("Downloaded file seems incomplete. Retry downloading it again");
                     continue;
                 }
@@ -162,7 +162,7 @@ impl<'a> DownloadActor<'a> {
                     title: metadata.title.to_string(),
                 };
 
-                timestamps = Timestamps::new(vec![start])
+                timestamps = Timestamps::new(vec![start]);
             }
 
             return Ok((metadata, timestamps));
@@ -175,16 +175,16 @@ impl<'a> DownloadActor<'a> {
     /// download stopped before completing.
     ///
     /// If there is no timestamp, return true.
-    fn is_file_complete(stream_duration: u64, timestamps: &Timestamps) -> Result<bool> {
+    fn is_file_complete(stream_duration: u64, timestamps: &Timestamps) -> bool {
         // The minimum number of second the last clip must last for the stream to be considered complete
         const MIN_CLIP_LENGTH: u64 = 10;
 
         if let Some(last_timestamp) = timestamps.last() {
             let last_secs = Timestamp::to_seconds(&last_timestamp.t_start);
 
-            Ok(last_secs + MIN_CLIP_LENGTH < stream_duration)
+            last_secs + MIN_CLIP_LENGTH < stream_duration
         } else {
-            Ok(true)
+            true
         }
     }
 }

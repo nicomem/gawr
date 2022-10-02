@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use clap::{
-    builder::PossibleValuesParser, command, App, AppSettings, Arg, ArgAction, ArgMatches, ValueHint,
+    builder::{PossibleValue, PossibleValuesParser},
+    command, value_parser, Arg, ArgAction, ArgMatches, Command, ValueEnum, ValueHint,
 };
 use config::{builder::DefaultState, Config, ConfigBuilder, Environment, File, FileFormat};
 use miette::{Context, IntoDiagnostic};
@@ -14,12 +15,23 @@ use crate::{
     types::{Bitrate, Extension},
 };
 
-clap::arg_enum! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-    #[serde(rename_all = "lowercase")]
-    pub enum Split {
-        Full,
-        Clips,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Split {
+    Full,
+    Clips,
+}
+
+impl ValueEnum for Split {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Split::Full, Split::Clips]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        Some(match self {
+            Split::Full => PossibleValue::new("full"),
+            Split::Clips => PossibleValue::new("slow"),
+        })
     }
 }
 
@@ -203,25 +215,24 @@ where
     Ok(())
 }
 
-fn arg_base(name: &str) -> Arg {
+fn arg_base(name: &'static str) -> Arg {
     Arg::new(name).long(name).required(false)
 }
 
-fn arg_list(name: &str) -> Arg {
+fn arg_list(name: &'static str) -> Arg {
     arg_base(name).action(ArgAction::Append)
 }
 
-fn arg_single(name: &str) -> Arg {
+fn arg_single(name: &'static str) -> Arg {
     arg_base(name).action(ArgAction::Set)
 }
 
-fn arg_bool(name: &str) -> Arg {
+fn arg_bool(name: &'static str) -> Arg {
     arg_base(name).action(ArgAction::SetTrue)
 }
 
-fn clap_app() -> App<'static> {
+fn clap_app() -> Command {
     command!()
-        .setting(AppSettings::NextLineHelp)
         .arg(
             arg_single("config")
                 .default_value(".gawr.toml")
@@ -241,13 +252,13 @@ fn clap_app() -> App<'static> {
         )
         .arg(
             arg_single("split")
-                .value_parser(PossibleValuesParser::new(Split::variants()))
+                .value_parser(value_parser!(Split))
                 .ignore_case(true)
                 .help(help::SPLIT),
         )
         .arg(
             arg_single("ext")
-                .value_parser(PossibleValuesParser::new(Extension::variants()))
+                .value_parser(value_parser!(Extension))
                 .ignore_case(true)
                 .help(help::EXT),
         )

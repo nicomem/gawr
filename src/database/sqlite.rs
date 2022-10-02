@@ -212,7 +212,7 @@ impl Sqlite {
     }
 }
 
-/// Wrapper around [ProcessedState] so that it can be read from/written to sqlite
+/// Wrapper around [`ProcessedState`] so that it can be read from/written to sqlite
 #[derive(Debug)]
 struct SqliteProcessedState(ProcessedState);
 
@@ -238,8 +238,7 @@ impl ToSql for SqliteProcessedState {
             ProcessedState::Completed => 1,
 
             // These are not fully completed so 0
-            ProcessedState::RemainingClips(_) => 0,
-            ProcessedState::ProcessedClips(_) => 0,
+            ProcessedState::RemainingClips(_) | ProcessedState::ProcessedClips(_) => 0,
         };
 
         Ok(ToSqlOutput::Owned(Value::Integer(val)))

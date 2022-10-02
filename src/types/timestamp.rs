@@ -38,7 +38,7 @@ impl Timestamps {
         let captures = description
             .lines()
             .map(str::trim)
-            .flat_map(|line| clip_regex.iter().flat_map(|re| re.captures(line)).next());
+            .filter_map(|line| clip_regex.iter().find_map(|re| re.captures(line)));
 
         // For every line that matched one regex, construct the timestamp
         let timestamps = captures
@@ -49,7 +49,7 @@ impl Timestamps {
                 // Remove potentially problematic characters from the title
                 let title = title
                     .split(['\'', '"', '/', '\\', '|', '~', '$', '#'])
-                    .map(|s| s.trim())
+                    .map(str::trim)
                     .collect::<Vec<_>>()
                     .join(" ");
 
@@ -75,7 +75,7 @@ impl Deref for Timestamps {
 impl Display for Timestamps {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "[")?;
-        for v in self.0.iter() {
+        for v in &self.0 {
             writeln!(f, "\t{v}")?;
         }
         writeln!(f, "]")?;

@@ -82,7 +82,7 @@ impl Actor<TimestampedClip, VideoTitle> for ClipperActor<'_> {
                 );
             }
 
-            let out_empty = self.reserve_output_path(self.out_dir, &start.title, self.ext);
+            let out_empty = Self::reserve_output_path(self.out_dir, &start.title, self.ext);
             let out_tmp = named_tempfile(self.ext).wrap_err("Could not create tempfile")?;
 
             // Create clip to tempfile (slow, things may go bad)
@@ -133,8 +133,8 @@ impl<'a> ClipperActor<'a> {
         ext: Extension,
         cache: &'a Sqlite,
         bitrate: Bitrate,
-    ) -> Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             id,
             stream_tsf,
             out_dir,
@@ -143,7 +143,7 @@ impl<'a> ClipperActor<'a> {
             bitrate,
             receive_channel: None,
             send_channel: None,
-        })
+        }
     }
 
     /// Create an empty placeholder for the clip in the output directory.
@@ -156,7 +156,7 @@ impl<'a> ClipperActor<'a> {
     /// method calls.
     /// This however assumes that the output directory is not changing outside
     /// of this method during the call.
-    fn reserve_output_path(&self, out_dir: &Path, title: &str, extension: Extension) -> PathBuf {
+    fn reserve_output_path(out_dir: &Path, title: &str, extension: Extension) -> PathBuf {
         static LOCK: OnceCell<Mutex<()>> = OnceCell::new();
 
         LOCK.get_or_init(|| Mutex::new(())).with_lock(|_lock| {

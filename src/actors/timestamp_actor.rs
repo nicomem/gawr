@@ -57,13 +57,15 @@ impl Actor<DownloadedStream, TimestampedClip> for TimestampActor<'_> {
             let work_indexes: Vec<database::ClipIdx> = match video_state {
                 ProcessedState::NotProcessed => {
                     self.cache
-                        .assign_work(db_id, timestamps.len() as _)
+                        .assign_work(db_id, timestamps.len().try_into().unwrap())
                         .wrap_err("Could not assign work")?;
-                    (0..timestamps.len()).map(|n| n as _).collect()
+                    (0..timestamps.len())
+                        .map(|n| n.try_into().unwrap())
+                        .collect()
                 }
                 ProcessedState::RemainingClips(v) => v,
                 ProcessedState::ProcessedClips(v) => (0..timestamps.len())
-                    .map(|n| n as _)
+                    .map(|n| n.try_into().unwrap())
                     .filter(|n| !v.contains(n))
                     .collect(),
                 ProcessedState::Completed => unimplemented!(),

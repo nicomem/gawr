@@ -132,7 +132,7 @@ impl StreamDownloader for Ytdl {
         let title = get_key("title")?;
         let title = title
             .split(PROBLEMATIC_CHARS)
-            .map(|s| s.trim())
+            .map(str::trim)
             .collect::<Vec<_>>()
             .join(" ");
 

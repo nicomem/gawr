@@ -58,7 +58,7 @@ impl StreamTransformer for Ffmpeg {
                 .args(["-ss", &start.t_start]);
 
             if let Some(end) = end {
-                cmd = cmd.args(["-to", &end.t_start])
+                cmd = cmd.args(["-to", &end.t_start]);
             }
 
             cmd.args(["-c:a", "copy"]).arg("--").arg(output)

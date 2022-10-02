@@ -51,60 +51,34 @@ If a configuration variable is present in multiple of those locations, the prior
 Available command line arguments can be checked with the `--help` argument :
 
 ```
-USAGE:
-    gawr [OPTIONS]
+An audio archiver tool to create an audio library out of web videos. Download, clip, and normalize audio streams
 
-OPTIONS:
-        --bitrate <bitrate>
-            The audio bitrate to use for output files. Must follow the `ffmpeg` bitrate format
+Usage: gawr [OPTIONS]
 
-        --cache <cache>
-            The path to the cache file, avoiding processing multiple times the same videos
-
-        --clip_regex <clip_regex>
-            Regular expressions to extract timestamps from description.
-            Must capture `time` and `title` groups (starting timestamp & clip title).
-            
-            For every description line, every pattern will be tested until one matches.
-            A default pattern that should handle most cases is used if none is provided.
-            
-            Must use the [Regex crate syntax](https://docs.rs/regex/latest/regex/#syntax)
-
-        --config <config>
-            The path to the TOML config file [default: .gawr.toml]
-
-        --cores <cores>
-            Assume the machine has this number of cores. Used to modify the number of worker threads
-            spawned.
-            
-            When using a value of 0 (default), auto-detect the number of cores from the system
-
-        --ext <ext>
-            The file extension to use for the output files. Defines the file container format to use
-            [possible values: Mka, Mkv, Ogg, Webm]
-
-    -h, --help
-            Print help information
-
-        --id <id>
-            The IDs of playlists or videos
-
-        --log <log>
-            The logging level to use [possible values: ERROR, WARN, INFO, DEBUG, TRACE]
-
-        --out <out>
-            The path to the output directory
-
-        --shuffle
-            Randomize the order in which the videos are downloaded. Do not influence how clips are
-            processed
-
-        --split <split>
-            Either keep the entire video or create clips based on timestamps in the description
-            [possible values: Full, Clips]
-
-    -V, --version
-            Print version information
+Options:
+      --config <config>          The path to the TOML config file [default: .gawr.toml]
+      --id <id>                  The IDs of playlists or videos
+      --out <out>                The path to the output directory
+      --cache <cache>            The path to the cache file, avoiding processing multiple times the same videos
+      --split <split>            Either keep the entire video or create clips based on timestamps in the description [possible values: full, slow]
+      --ext <ext>                The file extension to use for the output files. Defines the file container format to use [possible values: mka, mkv, ogg, webm]
+      --clip_regex <clip_regex>  Regular expressions to extract timestamps from description.
+                                 Must capture `time` and `title` groups (starting timestamp & clip title).
+                                 
+                                 For every description line, every pattern will be tested until one matches.
+                                 A default pattern that should handle most cases is used if none is provided.
+                                 
+                                 Must use the [Regex crate syntax](https://docs.rs/regex/latest/regex/#syntax)
+                                 
+      --shuffle                  Randomize the order in which the videos are downloaded. Do not influence how clips are processed
+      --cores <cores>            Assume the machine has this number of cores. Used to modify the number of worker threads spawned.
+                                 
+                                 When using a value of 0 (default), auto-detect the number of cores from the system
+                                 
+      --log <log>                The logging level to use [possible values: ERROR, WARN, INFO, DEBUG, TRACE]
+      --bitrate <bitrate>        The audio bitrate to use for output files. Must follow the `ffmpeg` bitrate format
+  -h, --help                     Print help information
+  -V, --version                  Print version information
 ```
 
 ### Environment Variables

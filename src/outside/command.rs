@@ -11,9 +11,9 @@ pub const FFXXX_DEFAULT_ARGS: [&str; 3] = ["-hide_banner", "-loglevel", "error"]
 
 bitflags! {
     pub struct Capture: u8 {
-        const STDIN = 0b0000001;
-        const STDOUT = 0b0000010;
-        const STDERR = 0b0000100;
+        const STDIN = 0b0000_0001;
+        const STDOUT = 0b0000_0010;
+        const STDERR = 0b0000_0100;
     }
 }
 

@@ -1,15 +1,34 @@
-use std::path::Path;
+use std::{ffi::OsStr, path::Path};
 
+use clap::{builder::PossibleValue, ValueEnum};
 use serde::Deserialize;
 
-clap::arg_enum! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-    #[serde(rename_all = "lowercase")]
-    pub enum Extension {
-        Mka,
-        Mkv,
-        Ogg,
-        Webm,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Extension {
+    Mka,
+    Mkv,
+    Ogg,
+    Webm,
+}
+
+impl ValueEnum for Extension {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[
+            Extension::Mka,
+            Extension::Mkv,
+            Extension::Ogg,
+            Extension::Webm,
+        ]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        Some(match self {
+            Extension::Mka => PossibleValue::new("mka"),
+            Extension::Mkv => PossibleValue::new("mkv"),
+            Extension::Ogg => PossibleValue::new("ogg"),
+            Extension::Webm => PossibleValue::new("webm"),
+        })
     }
 }
 
@@ -51,7 +70,7 @@ impl Extension {
     /// Return None in case of no or invalid extension.
     pub fn from_path(path: &Path) -> Option<Self> {
         path.extension()
-            .and_then(|ext| ext.to_str())
+            .and_then(OsStr::to_str)
             .and_then(Self::from_no_dot)
     }
 }

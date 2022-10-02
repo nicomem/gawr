@@ -72,8 +72,6 @@ fn main() -> miette::Result<()> {
         .flatten()
         .collect();
 
-    // .map_err(miette::Report::from)
-    // .wrap_err("Could not get playlist videos id")?;
     info!("{} videos in the playlist", videos_id.len());
 
     if args.shuffle {
@@ -148,7 +146,7 @@ fn load_actors<'a>(
             args.ext,
             cache,
             args.bitrate,
-        )?);
+        ));
     }
 
     // Connect the actors together
@@ -178,7 +176,7 @@ fn load_actors<'a>(
             dl_actor
                 .run()
                 .wrap_err("Download Actor crashed unexpectedly")
-                .unwrap()
+                .unwrap();
         })
         .into_diagnostic()?;
 
@@ -188,7 +186,7 @@ fn load_actors<'a>(
             tstamp_actor
                 .run()
                 .wrap_err("Timestamp Actor crashed unexpectedly")
-                .unwrap()
+                .unwrap();
         })
         .into_diagnostic()?;
 
@@ -199,7 +197,7 @@ fn load_actors<'a>(
                 clip_actor
                     .run()
                     .wrap_err_with(|| format!("Clipper Actor {i} crashed unexpectedly"))
-                    .unwrap()
+                    .unwrap();
             })
             .into_diagnostic()?;
     }

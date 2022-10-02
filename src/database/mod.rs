@@ -9,7 +9,7 @@ pub use sqlite::Sqlite;
 pub type ClipIdx = u16;
 
 /// Identifier that can be used to refer to video instead of using the
-/// video_id string.
+/// `video_id` string.
 ///
 /// This identifier **must** be unique for each video in the database, and
 /// **must** remain that way unless explicitely stated so.
@@ -66,7 +66,7 @@ where
     /// The indexes may not be completed in order.
     ///
     /// Once all units of work have been completed, the database **may**
-    /// internally mark the video as fully completed or wait for a call to [set_video_as_completed].
+    /// internally mark the video as fully completed or wait for a call to [`set_video_as_completed`].
     fn complete_work(&self, video: VideoId, clip_idx: ClipIdx) -> Result<()>;
 
     /// Inform the database that all the work for the video has been done.
