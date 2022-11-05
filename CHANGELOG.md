@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2022-11-05
+### Changed
+- On Unix systems: Try to set output file permission to 644 (read-write for user, read-only for the rest)
+    - If this fails, the permissions set on the file creation are left
+    - The new permissions are the common ones for created files and avoids problems with third-party programs trying to read the files as another user of the system
+
 ## [1.0.1] - 2022-10-02
 ### Changed
 - Clap upgraded to version 4, this changes how the CLI is displayed

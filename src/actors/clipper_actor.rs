@@ -1,4 +1,5 @@
 use std::{
+    fs::Permissions,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -104,6 +105,9 @@ impl Actor<TimestampedClip, VideoTitle> for ClipperActor<'_> {
                 debug!("Moving file failed, falling back to copying");
                 std::fs::copy(&out_tmp, &output).unwrap();
             }
+
+            // Change the permissions if possible
+            self.set_output_file_permission(&output);
 
             self.cache.complete_work(stream_info.db_id, clip_idx)?;
 
@@ -222,5 +226,23 @@ impl<'a> ClipperActor<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Set the output file permissions if the system allows it
+    fn set_output_file_permission(&self, output: &Path) {
+        #[cfg(unix)]
+        {
+            // Try to set 644 permissions (read-write for user, read-only for the rest)
+            if std::fs::set_permissions(
+                &output,
+                <Permissions as std::os::unix::prelude::PermissionsExt>::from_mode(0o644),
+            )
+            .is_err()
+            {
+                debug!("Could not set '664' permission to file, leaving current permissions");
+            }
+        }
+
+        // For other systems, permissions settings are too limited
     }
 }
