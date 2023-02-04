@@ -234,7 +234,7 @@ impl<'a> ClipperActor<'a> {
         {
             // Try to set 644 permissions (read-write for user, read-only for the rest)
             if std::fs::set_permissions(
-                &output,
+                output,
                 <Permissions as std::os::unix::prelude::PermissionsExt>::from_mode(0o644),
             )
             .is_err()

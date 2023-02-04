@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2023-02-04
+### Added
+- Added automatic Github release building using `cargo-dist`
+
 ## [1.0.2] - 2022-11-05
 ### Changed
 - On Unix systems: Try to set output file permission to 644 (read-write for user, read-only for the rest)
