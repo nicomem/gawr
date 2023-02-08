@@ -84,7 +84,9 @@
         "gomod2nix": "gomod2nix",
         "mach-nix": "mach-nix",
         "nix-pypi-fetcher": "nix-pypi-fetcher",
-        "nixpkgs": "nixpkgs",
+        "nixpkgs": [
+          "nixpkgs"
+        ],
         "poetry2nix": "poetry2nix",
         "pre-commit-hooks": "pre-commit-hooks",
         "pruned-racket-catalog": "pruned-racket-catalog"
@@ -240,11 +242,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1665580254,
-        "narHash": "sha256-hO61XPkp1Hphl4HGNzj1VvDH5URt7LI6LaY/385Eul4=",
+        "lastModified": 1675763311,
+        "narHash": "sha256-bz0Q2H3mxsF1CUfk26Sl9Uzi8/HFjGFD/moZHz1HebU=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "f634d427b0224a5f531ea5aa10c3960ba6ec5f0f",
+        "rev": "fab09085df1b60d6a0870c8a89ce26d5a4a708c2",
         "type": "github"
       },
       "original": {
@@ -332,7 +334,8 @@
     },
     "root": {
       "inputs": {
-        "dream2nix": "dream2nix"
+        "dream2nix": "dream2nix",
+        "nixpkgs": "nixpkgs"
       }
     },
     "rust-analyzer-src": {
