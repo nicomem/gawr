@@ -6,7 +6,6 @@ use std::{
 
 use crossbeam_channel::{Receiver, Sender};
 use miette::{miette, Context, IntoDiagnostic, Result};
-use once_cell::sync::OnceCell;
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -161,9 +160,9 @@ impl<'a> ClipperActor<'a> {
     /// This however assumes that the output directory is not changing outside
     /// of this method during the call.
     fn reserve_output_path(out_dir: &Path, title: &str, extension: Extension) -> PathBuf {
-        static LOCK: OnceCell<Mutex<()>> = OnceCell::new();
+        static LOCK: Mutex<()> = Mutex::new(());
 
-        LOCK.get_or_init(|| Mutex::new(())).with_lock(|_lock| {
+        LOCK.with_lock(|_lock| {
             let mut output = find_unused_prefix(out_dir, title, extension, true)
                 .context("Could not build output file path")
                 .unwrap();

@@ -1,4 +1,5 @@
-use once_cell::sync::Lazy;
+use std::sync::OnceLock;
+
 use regex::Regex;
 
 // To whomever reads this asking what an abomination this is
@@ -48,5 +49,8 @@ const PATTERN1: &str = concat!("^", opt_idx!(), timestamp!(), opt_sep!(), title!
 /// Example: "5. My Very Cool Title - 05:49"
 const PATTERN2: &str = concat!("^", opt_idx!(), title!(), opt_sep!(), timestamp!(), "$");
 
-pub static DEFAULT_RE_LIST: Lazy<Vec<Regex>> =
-    Lazy::new(|| vec![Regex::new(PATTERN1).unwrap(), Regex::new(PATTERN2).unwrap()]);
+static DEFAULT_RE_LIST: OnceLock<[Regex; 2]> = OnceLock::new();
+
+pub fn get_default_re_list() -> &'static [Regex] {
+    DEFAULT_RE_LIST.get_or_init(|| [Regex::new(PATTERN1).unwrap(), Regex::new(PATTERN2).unwrap()])
+}

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Package project for nix using `dream2nix`
 
+### Changed
+- Replace usage of `once_cell` crate with the standard library `OnceLock`
+
 ## [1.0.3] - 2023-02-04
 ### Added
 - Added automatic Github release building using `cargo-dist`

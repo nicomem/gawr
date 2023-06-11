@@ -139,7 +139,7 @@ pub fn parse_cli() -> Result<AppArgs> {
                     .wrap_err("Error while parsing regex")?)
             })
             .collect::<Result<_>>()?,
-        Err(config::ConfigError::NotFound(_)) => my_regex::DEFAULT_RE_LIST.clone(),
+        Err(config::ConfigError::NotFound(_)) => my_regex::get_default_re_list().to_vec(),
         Err(e) => return Err(e).into_diagnostic()?,
     };
 
