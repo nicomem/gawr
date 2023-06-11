@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "gawr"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "bitflags",
  "clap",
