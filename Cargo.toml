@@ -11,17 +11,17 @@ description = "An audio archiver tool to create an audio library out of web vide
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitflags = "1.3.2"
+bitflags = "2.4.1"
 clap = { version = "4.0.8", features = ["cargo"] }
 config = { version = "0.13.2", default-features = false, features = ["toml"] }
 crossbeam-channel = "0.5.2"
-fastrand = "1.7.0"
+fastrand = "2.0.1"
 heck = "0.4.0"
 indoc = "2.0.0"
 miette = { version = "5.1.1", features = ["fancy"] }
 owo-colors = "3.3.0"
 regex = "1.5.4"
-rusqlite = { version = "0.28.0", features = ["bundled"] }
+rusqlite = { version = "0.29.0", features = ["bundled"] }
 serde = { version = "1.0.143", features = ["derive"] }
 serde_json = "1.0.78"
 tempfile = "3.3.0"

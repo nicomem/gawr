@@ -20,3 +20,4 @@
 
 # Nix
 /result
+/.direnv
