@@ -77,8 +77,8 @@ Options:
                                  
       --log <log>                The logging level to use [possible values: ERROR, WARN, INFO, DEBUG, TRACE]
       --bitrate <bitrate>        The audio bitrate to use for output files. Must follow the `ffmpeg` bitrate format
-  -h, --help                     Print help information
-  -V, --version                  Print version information
+  -h, --help                     Print help
+  -V, --version                  Print version
 ```
 
 ### Environment Variables

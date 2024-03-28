@@ -20,12 +20,12 @@ jobs:
     - name: Install packages
       run: sudo apt-get install gcc-mingw-w64
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Install latest stable
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ matrix.target }}
-        components: rustfmt, clippy
+        components: rustfmt
 
     - name: Format
       run: cargo fmt --check

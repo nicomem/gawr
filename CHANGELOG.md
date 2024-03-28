@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fix nix packaging by using `crane` instead of `dream2nix`
+
 ## [1.0.4] - 2023-06-11
 ### Added
 - Package project for nix using `dream2nix`
