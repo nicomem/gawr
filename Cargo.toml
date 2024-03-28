@@ -1,6 +1,6 @@
 [package]
 name = "gawr"
-version = "1.0.4"
+version = "1.0.5"
 license = "MIT OR Apache-2.0"
 authors = ["Nicolas Mémeint <nicomem@pm.me>"]
 repository = "https://github.com/nicomem/gawr"
