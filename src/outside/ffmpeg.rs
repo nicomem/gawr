@@ -97,20 +97,23 @@ impl StreamTransformer for Ffmpeg {
         // Put back the lines in the correct order
         json_parts.reverse();
         // Join the lines together
-        let json_str: String = json_parts.join("\n");
+        let mut json_bytes = json_parts.join("\n").into_bytes();
 
-        let json = serde_json::from_str::<serde_json::Value>(&json_str)
+        let json = simd_json::to_borrowed_value(&mut json_bytes)
             .into_diagnostic()
             .wrap_err("Could not parse JSON output")?;
-        let json = json
-            .as_object()
-            .ok_or_else(|| miette!("JSON output is not an object"))?;
+        let simd_json::BorrowedValue::Object(json) = json else {
+            return Err(miette!("JSON output is not an object"));
+        };
 
         let get_str = |k: &str| -> Result<&str> {
-            json.get(k)
+            let simd_json::BorrowedValue::String(str) = json
+                .get(k)
                 .ok_or_else(|| miette!(format!("Key {k} not found in JSON object")))?
-                .as_str()
-                .ok_or_else(|| miette!(format!("Value of key {k} is not a string")))
+            else {
+                return Err(miette!(format!("Value of key {k} is not a string")));
+            };
+            Ok(str)
         };
 
         let input_i = get_str("input_i")?;

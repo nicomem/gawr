@@ -12,7 +12,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        craneLib = crane.lib.${system};
+        craneLib = crane.mkLib nixpkgs.legacyPackages.${system};
       in
       {
         packages.default = craneLib.buildPackage {

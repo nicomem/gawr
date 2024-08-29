@@ -11,23 +11,23 @@ description = "An audio archiver tool to create an audio library out of web vide
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitflags = "2.4.1"
-clap = { version = "4.0.8", features = ["cargo"] }
+bitflags = "2.6.0"
+clap = { version = "4.5.16", features = ["cargo"] }
 config = { version = "0.14.0", default-features = false, features = ["toml"] }
-crossbeam-channel = "0.5.2"
-fastrand = "2.0.1"
+crossbeam-channel = "0.5.13"
+fastrand = "2.1.1"
 heck = "0.5.0"
-indoc = "2.0.0"
+indoc = "2.0.5"
 miette = { version = "7.2.0", features = ["fancy"] }
 owo-colors = "4.0.0"
-regex = "1.5.4"
-rusqlite = { version = "0.31.0", features = ["bundled"] }
-serde = { version = "1.0.143", features = ["derive"] }
-serde_json = "1.0.78"
-tempfile = "3.3.0"
-time = { version = "0.3.9", features = ["local-offset"] }
-tracing = "0.1.32"
-tracing-subscriber = { version = "0.3.10", features = ["time"] }
+regex = "1.10.6"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+serde = { version = "1.0.209", features = ["derive"] }
+simd-json = { version = "0.14.0-rc.3", default-features = false, features = ["swar-number-parsing", "runtime-detection"] }
+tempfile = "3.12.0"
+time = { version = "0.3.36", features = ["local-offset"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["time"] }
 
 [features]
 

@@ -75,6 +75,7 @@ impl CacheDb for Sqlite {
             Ok((id, ProcessedState::RemainingClips(work_indexes)))
         } else {
             drop(conn);
+            #[allow(clippy::readonly_write_lock)]
             let conn = self.conn.write().unwrap();
 
             // Video not in the table, insert it and get back the id
@@ -96,6 +97,7 @@ impl CacheDb for Sqlite {
     }
 
     fn assign_work(&self, video: VideoId, nb_clips: ClipIdx) -> Result<()> {
+        #[allow(clippy::readonly_write_lock)]
         let conn = self.conn.write().unwrap();
 
         // Delete any previous work
@@ -130,6 +132,7 @@ impl CacheDb for Sqlite {
     }
 
     fn complete_work(&self, video: VideoId, clip_idx: ClipIdx) -> Result<()> {
+        #[allow(clippy::readonly_write_lock)]
         let conn = self.conn.write().unwrap();
 
         debug!("Complete work {clip_idx} of video {video}");
@@ -142,6 +145,7 @@ impl CacheDb for Sqlite {
     }
 
     fn set_video_as_completed(&self, video: VideoId) -> Result<()> {
+        #[allow(clippy::readonly_write_lock)]
         let conn = self.conn.write().unwrap();
 
         // Set as completed
@@ -184,6 +188,7 @@ impl CacheDb for Sqlite {
 impl Sqlite {
     /// Create the tables if they do not already exist
     fn create_tables(&self) -> Result<()> {
+        #[allow(clippy::readonly_write_lock)]
         let conn = self.conn.write().unwrap();
 
         conn.execute_batch(

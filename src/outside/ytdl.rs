@@ -6,6 +6,7 @@ use std::{
 };
 
 use miette::{miette, Context, IntoDiagnostic};
+use simd_json::base::ValueAsScalar;
 
 use super::command::{assert_success_command, run_command, Capture, YT_DL, YT_DLP};
 use crate::{
@@ -100,7 +101,7 @@ impl StreamDownloader for Ytdl {
     }
 
     fn get_metadata(&self, video_id: &str) -> Result<Metadata> {
-        let res = self.run_check_availability(
+        let mut res = self.run_check_availability(
             |cmd| {
                 cmd.arg("-q")
                     .arg("--skip-download")
@@ -110,22 +111,22 @@ impl StreamDownloader for Ytdl {
             },
             Capture::STDOUT,
         )?;
-        let output = String::from_utf8_lossy(&res.stdout);
 
-        let json = serde_json::from_str::<serde_json::Value>(&output)
+        let simd_json::BorrowedValue::Object(json) = simd_json::to_borrowed_value(&mut res.stdout)
             .into_diagnostic()
-            .wrap_err("Could not parse json")?;
-        let json = json
-            .as_object()
-            .ok_or_else(|| miette!("JSON is not an object"))?;
+            .wrap_err("Could not parse json")?
+        else {
+            return Err(miette!("JSON is not an object").into());
+        };
 
-        let get_key = |key| -> Result<String> {
-            Ok(json
-                .get(key)
-                .ok_or_else(|| miette!(format!("Key '{key}' not found in JSON")))?
-                .as_str()
-                .ok_or_else(|| miette!(format!("Value of key '{key}' is not a string")))?
-                .to_owned())
+        let get_key = |k| -> Result<&str> {
+            let simd_json::BorrowedValue::String(str) = json
+                .get(k)
+                .ok_or_else(|| miette!(format!("Key {k} not found in JSON object")))?
+            else {
+                return Err(miette!(format!("Value of key {k} is not a string")).into());
+            };
+            Ok(str)
         };
 
         // Remove potentially problematic characters from the title
@@ -136,17 +137,22 @@ impl StreamDownloader for Ytdl {
             .collect::<Vec<_>>()
             .join(" ");
 
-        let duration = json
+        let simd_json::BorrowedValue::Static(duration) = json
             .get("duration")
             .ok_or_else(|| miette!("Key 'duration' not found in JSON"))?
+        else {
+            return Err(miette!("Value of key 'duration' is not a u64").into());
+        };
+
+        let duration = duration
             .as_u64()
             .ok_or_else(|| miette!("Value of key 'duration' is not a u64"))?;
 
         Ok(Metadata {
             title,
             duration,
-            uploader: get_key("uploader")?,
-            description: get_key("description")?,
+            uploader: get_key("uploader")?.to_string(),
+            description: get_key("description")?.to_string(),
         })
     }
 
